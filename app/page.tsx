@@ -2,22 +2,38 @@
 
 import { useState } from "react";
 
+type QuizQuestion = {
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+};
+
+type Study = {
+  summary: string[];
+  quiz: QuizQuestion[];
+};
+
 export default function Home() {
   const [notes, setNotes] = useState("");
-  const [result, setResult] = useState("");
+  const [study, setStudy] = useState<Study | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, number>>({});
 
-  async function handleSummarize() {
+  async function handleGenerate() {
     if (notes.trim() === "") {
-      setResult("Please paste some notes first.");
+      setError("Please paste some notes first.");
       return;
     }
 
     setLoading(true);
-    setResult("");
+    setError("");
+    setStudy(null);
+    setAnswers({});
 
     try {
-      const response = await fetch("/api/summarize", {
+      const response = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
@@ -25,16 +41,26 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        setResult(data.error || "Something went wrong.");
+        setError(data.error || "Something went wrong.");
       } else {
-        setResult(data.summary);
+        setStudy(data);
       }
     } catch {
-      setResult("Could not reach the server.");
+      setError("Could not reach the server.");
     } finally {
       setLoading(false);
     }
   }
+
+  function choose(questionIndex: number, optionIndex: number) {
+    if (answers[questionIndex] !== undefined) return;
+    setAnswers({ ...answers, [questionIndex]: optionIndex });
+  }
+
+  const answeredCount = Object.keys(answers).length;
+  const score = study
+    ? study.quiz.filter((q, i) => answers[i] === q.answerIndex).length
+    : 0;
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -51,14 +77,78 @@ export default function Home() {
       />
 
       <button
-        onClick={handleSummarize}
+        onClick={handleGenerate}
         disabled={loading}
         className="mt-4 rounded bg-blue-600 px-5 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
       >
-        {loading ? "Summarizing..." : "Summarize"}
+        {loading ? "Working..." : "Create study kit"}
       </button>
 
-      {result && <div className="mt-6 whitespace-pre-wrap rounded border p-4">{result}</div>}
+      {error && (
+        <div className="mt-6 rounded border border-red-500 p-4">{error}</div>
+      )}
+
+      {study && (
+        <>
+          <section className="mt-6 rounded border p-4">
+            <h2 className="text-xl font-semibold">Summary</h2>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {study.summary.map((point, i) => (
+                <li key={i}>{point}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="mt-6">
+            <h2 className="text-xl font-semibold">Quiz</h2>
+
+            {study.quiz.map((q, qi) => {
+              const picked = answers[qi];
+              const answered = picked !== undefined;
+
+              return (
+                <div key={qi} className="mt-4 rounded border p-4">
+                  <p className="font-medium">
+                    {qi + 1}. {q.question}
+                  </p>
+
+                  <div className="mt-3 space-y-2">
+                    {q.options.map((option, oi) => {
+                      let style = "border-gray-500 hover:bg-gray-500/20";
+                      if (answered && oi === q.answerIndex) {
+                        style = "border-green-500 bg-green-500/20";
+                      } else if (answered && oi === picked) {
+                        style = "border-red-500 bg-red-500/20";
+                      }
+
+                      return (
+                        <button
+                          key={oi}
+                          onClick={() => choose(qi, oi)}
+                          disabled={answered}
+                          className={`block w-full rounded border px-3 py-2 text-left ${style}`}
+                        >
+                          {"ABCD"[oi]}. {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {answered && (
+                    <p className="mt-3 text-sm text-gray-400">{q.explanation}</p>
+                  )}
+                </div>
+              );
+            })}
+
+            {answeredCount === study.quiz.length && (
+              <p className="mt-4 text-lg font-semibold">
+                Your score: {score} / {study.quiz.length}
+              </p>
+            )}
+          </section>
+        </>
+      )}
     </main>
   );
 }
