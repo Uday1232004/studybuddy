@@ -101,6 +101,16 @@ ${notes}`;
       );
     }
 
+        const { error: saveError } = await supabase.from("study_kits").insert({
+      notes,
+      summary: result.summary,
+      quiz: result.quiz,
+    });
+
+    if (saveError) {
+      console.error("Could not save study kit:", saveError);
+    }
+
     return Response.json(result);
   } catch {
     return Response.json(

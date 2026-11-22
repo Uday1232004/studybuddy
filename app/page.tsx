@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import SignOutButton from "./SignOutButton";
+import History, { type SavedKit } from "./History";
 
 type QuizQuestion = {
   question: string;
@@ -21,6 +22,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [historyKey, setHistoryKey] = useState(0);
 
   async function handleGenerate() {
     if (notes.trim() === "") {
@@ -45,12 +47,21 @@ export default function Home() {
         setError(data.error || "Something went wrong.");
       } else {
         setStudy(data);
+        setHistoryKey((k) => k + 1);
       }
     } catch {
       setError("Could not reach the server.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSelect(kit: SavedKit) {
+    setNotes(kit.notes);
+    setStudy({ summary: kit.summary, quiz: kit.quiz });
+    setAnswers({});
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function choose(questionIndex: number, optionIndex: number) {
@@ -65,7 +76,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-2xl p-6">
-            <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">StudyBuddy</h1>
         <SignOutButton />
       </div>
@@ -153,6 +164,8 @@ export default function Home() {
           </section>
         </>
       )}
+
+      <History refreshKey={historyKey} onSelect={handleSelect} />
     </main>
   );
 }
