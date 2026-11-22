@@ -93,9 +93,14 @@ export default function Home() {
             <button
               type="button"
               onClick={handleNewNotes}
-              className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+              className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left text-sm font-semibold hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
-              + New notes
+              <span>+ New notes</span>
+              <span className="grid size-7 place-items-center rounded-lg bg-[var(--surface-hover)]" aria-hidden="true">
+                <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path d="M10 4v12M4 10h12" />
+                </svg>
+              </span>
             </button>
             <History refreshKey={historyKey} onSelect={handleSelect} />
           </div>
@@ -103,6 +108,26 @@ export default function Home() {
         <section
           className={`${activeTab === "Workspace" ? "flex" : "hidden"} min-h-0 flex-col overflow-y-auto lg:flex`}
         >
+          {study && (
+            <div className="mx-auto flex w-full max-w-[720px] gap-8 px-6 pt-7 sm:px-10">
+              <div>
+                <p className="text-3xl font-extrabold leading-none text-[var(--accent)]">
+                  {study.summary.length}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold tracking-[0.16em] text-[var(--muted)] uppercase">
+                  Key points
+                </p>
+              </div>
+              <div>
+                <p className="text-3xl font-extrabold leading-none text-[var(--accent)]">
+                  {study.quiz.length}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold tracking-[0.16em] text-[var(--muted)] uppercase">
+                  Questions
+                </p>
+              </div>
+            </div>
+          )}
           <Workspace
             notes={notes}
             onNotesChange={setNotes}

@@ -30,11 +30,14 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic =
-    path.startsWith("/login") || path.startsWith("/api") || path === "/about";
+    path.startsWith("/login") ||
+    path.startsWith("/api") ||
+    path === "/about" ||
+    path === "/welcome";
 
   if (!isLoggedIn && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/welcome";
     return NextResponse.redirect(url);
   }
 

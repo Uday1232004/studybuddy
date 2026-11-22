@@ -1,14 +1,21 @@
 @import "tailwindcss";
 
+/* Tailwind's dark: classes follow our toggle, not the computer's setting */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --bg: #ffffff;
-  --surface: #f7f7f5;
-  --surface-hover: #efeeeb;
-  --border: #e6e4df;
-  --text: #37352f;
-  --muted: #787774;
-  --accent: #2383e2;
-  --accent-hover: #1a6fc4;
+  --bg: #f4f4f2;
+  --surface: #ffffff;
+  --surface-hover: #eeedea;
+  --border: #e4e2dd;
+  --text: #1d1d1b;
+  --muted: #6f6e69;
+  --accent: #ee7d17;
+  --accent-hover: #d96f0f;
+  --on-accent: #1d1d1b;
+  --panel: #1c1c1c;
+  --on-panel: #f2f2f0;
+  --on-panel-muted: #a3a29d;
   --good: #1a7f4b;
   --good-bg: #e6f4ec;
   --bad: #c4361f;
@@ -16,28 +23,69 @@
 }
 
 .dark {
-  --bg: #191919;
-  --surface: #202020;
-  --surface-hover: #2b2b2b;
-  --border: #323232;
-  --text: #e6e6e4;
-  --muted: #9b9a97;
-  --accent: #3d8bd9;
-  --accent-hover: #5aa0e8;
-  --good: #6cc59a;
-  --good-bg: #1f3a2d;
-  --bad: #f1897a;
-  --bad-bg: #432723;
+  --bg: #1c1c1c;
+  --surface: #252525;
+  --surface-hover: #2f2f2f;
+  --border: #383835;
+  --text: #ecebe8;
+  --muted: #a3a29d;
+  --accent: #f28a1f;
+  --accent-hover: #ff9d3d;
+  --on-accent: #1a1a1a;
+  --panel: #303030;
+  --on-panel: #f2f2f0;
+  --on-panel-muted: #b0afaa;
+  --good: #7ad1a3;
+  --good-bg: #22382d;
+  --bad: #ff9b8c;
+  --bad-bg: #432a27;
 }
 
 @theme inline {
-  --font-sans: Arial, Helvetica, sans-serif;
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
 }
 
-body {
-  min-height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-manrope), ui-sans-serif, -apple-system, "Segoe UI",
+      Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  textarea,
+  input {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  textarea::placeholder,
+  input::placeholder {
+    color: var(--muted);
+  }
 }

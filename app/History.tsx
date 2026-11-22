@@ -25,6 +25,7 @@ export default function History({ refreshKey, onSelect }: Props) {
   const [kits, setKits] = useState<SavedKit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -70,8 +71,15 @@ export default function History({ refreshKey, onSelect }: Props) {
           <li key={kit.id}>
             <button
               type="button"
-              onClick={() => onSelect(kit)}
-              className="block w-full rounded-lg border border-transparent px-3 py-2 text-left hover:border-[var(--border)] hover:bg-[var(--surface)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+              onClick={() => {
+                setSelectedId(kit.id);
+                onSelect(kit);
+              }}
+              className={`block w-full rounded-r-xl border-y border-r px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                selectedId === kit.id
+                  ? "border-l-2 border-l-[var(--accent)] bg-[var(--surface)]"
+                  : "border-l-2 border-l-transparent hover:bg-[var(--surface)]"
+              }`}
             >
               <span className="block truncate text-sm">
                 {kit.notes.split("\n")[0] || "Untitled notes"}
