@@ -46,25 +46,38 @@ export default function History({ refreshKey, onSelect }: Props) {
   }, [refreshKey]);
 
   return (
-    <section className="mt-10">
-      <h2 className="text-xl font-semibold">My history</h2>
+    <section className="mt-7">
+      <h2 className="text-xs font-semibold tracking-wide text-[var(--muted)] uppercase">
+        My history
+      </h2>
 
-      {loading && <p className="mt-2 text-sm text-gray-500">Loading...</p>}
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {loading && (
+        <p className="mt-3 text-sm text-[var(--muted)]" aria-live="polite">
+          Loading...
+        </p>
+      )}
+      {error && (
+        <p className="mt-3 text-sm text-[var(--bad)]" role="alert">
+          {error}
+        </p>
+      )}
       {!loading && !error && kits.length === 0 && (
-        <p className="mt-2 text-sm text-gray-500">No saved study kits yet.</p>
+        <p className="mt-3 text-sm text-[var(--muted)]">No history yet.</p>
       )}
 
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-3 space-y-1">
         {kits.map((kit) => (
           <li key={kit.id}>
             <button
+              type="button"
               onClick={() => onSelect(kit)}
-              className="block w-full rounded border px-3 py-2 text-left hover:bg-gray-500/20"
+              className="block w-full rounded-lg border border-transparent px-3 py-2 text-left hover:border-[var(--border)] hover:bg-[var(--surface)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
             >
-              <span className="block truncate">{kit.notes.slice(0, 80)}</span>
-              <span className="block text-xs text-gray-500">
-                {new Date(kit.created_at).toLocaleString()}
+              <span className="block truncate text-sm">
+                {kit.notes.split("\n")[0] || "Untitled notes"}
+              </span>
+              <span className="mt-1 block text-xs text-[var(--muted)]">
+                {new Date(kit.created_at).toLocaleDateString()}
               </span>
             </button>
           </li>

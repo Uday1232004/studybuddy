@@ -1,15 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import SignOutButton from "./SignOutButton";
 import History, { type SavedKit } from "./History";
-
-type QuizQuestion = {
-  question: string;
-  options: string[];
-  answerIndex: number;
-  explanation: string;
-};
+import QuizPanel, { type QuizQuestion } from "./components/QuizPanel";
+import MobileTabs, { type TabName } from "./components/MobileTabs";
+import TopBar from "./components/TopBar";
+import Workspace from "./components/Workspace";
 
 type Study = {
   summary: string[];
@@ -23,6 +19,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [historyKey, setHistoryKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<TabName>("Workspace");
 
   async function handleGenerate() {
     if (notes.trim() === "") {
@@ -47,7 +44,8 @@ export default function Home() {
         setError(data.error || "Something went wrong.");
       } else {
         setStudy(data);
-        setHistoryKey((k) => k + 1);
+        setHistoryKey((key) => key + 1);
+        setActiveTab("Workspace");
       }
     } catch {
       setError("Could not reach the server.");
@@ -61,7 +59,16 @@ export default function Home() {
     setStudy({ summary: kit.summary, quiz: kit.quiz });
     setAnswers({});
     setError("");
+    setActiveTab("Workspace");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleNewNotes() {
+    setNotes("");
+    setStudy(null);
+    setAnswers({});
+    setError("");
+    setActiveTab("Workspace");
   }
 
   function choose(questionIndex: number, optionIndex: number) {
@@ -71,101 +78,54 @@ export default function Home() {
 
   const answeredCount = Object.keys(answers).length;
   const score = study
-    ? study.quiz.filter((q, i) => answers[i] === q.answerIndex).length
+    ? study.quiz.filter((question, index) => answers[index] === question.answerIndex).length
     : 0;
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">StudyBuddy</h1>
-        <SignOutButton />
-      </div>
-      <p className="mt-2 text-gray-500">
-        Paste your notes. Get a summary and a quiz.
-      </p>
-
-      <textarea
-        className="mt-6 h-48 w-full rounded border bg-white p-3 text-black"
-        placeholder="Paste your notes here..."
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-      />
-
-      <button
-        onClick={handleGenerate}
-        disabled={loading}
-        className="mt-4 rounded bg-blue-600 px-5 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {loading ? "Working..." : "Create study kit"}
-      </button>
-
-      {error && (
-        <div className="mt-6 rounded border border-red-500 p-4">{error}</div>
-      )}
-
-      {study && (
-        <>
-          <section className="mt-6 rounded border p-4">
-            <h2 className="text-xl font-semibold">Summary</h2>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              {study.summary.map((point, i) => (
-                <li key={i}>{point}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="mt-6">
-            <h2 className="text-xl font-semibold">Quiz</h2>
-
-            {study.quiz.map((q, qi) => {
-              const picked = answers[qi];
-              const answered = picked !== undefined;
-
-              return (
-                <div key={qi} className="mt-4 rounded border p-4">
-                  <p className="font-medium">
-                    {qi + 1}. {q.question}
-                  </p>
-
-                  <div className="mt-3 space-y-2">
-                    {q.options.map((option, oi) => {
-                      let style = "border-gray-500 hover:bg-gray-500/20";
-                      if (answered && oi === q.answerIndex) {
-                        style = "border-green-500 bg-green-500/20";
-                      } else if (answered && oi === picked) {
-                        style = "border-red-500 bg-red-500/20";
-                      }
-
-                      return (
-                        <button
-                          key={oi}
-                          onClick={() => choose(qi, oi)}
-                          disabled={answered}
-                          className={`block w-full rounded border px-3 py-2 text-left ${style}`}
-                        >
-                          {"ABCD"[oi]}. {option}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {answered && (
-                    <p className="mt-3 text-sm text-gray-400">{q.explanation}</p>
-                  )}
-                </div>
-              );
-            })}
-
-            {answeredCount === study.quiz.length && (
-              <p className="mt-4 text-lg font-semibold">
-                Your score: {score} / {study.quiz.length}
-              </p>
-            )}
-          </section>
-        </>
-      )}
-
-      <History refreshKey={historyKey} onSelect={handleSelect} />
-    </main>
+    <div className="flex h-dvh flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
+      <TopBar />
+      <MobileTabs activeTab={activeTab} onSelect={setActiveTab} />
+      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_360px]">
+        <aside
+          className={`${activeTab === "Notes" ? "flex" : "hidden"} min-h-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] lg:flex`}
+        >
+          <div className="overflow-y-auto p-5">
+            <button
+              type="button"
+              onClick={handleNewNotes}
+              className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+            >
+              + New notes
+            </button>
+            <History refreshKey={historyKey} onSelect={handleSelect} />
+          </div>
+        </aside>
+        <section
+          className={`${activeTab === "Workspace" ? "flex" : "hidden"} min-h-0 flex-col overflow-y-auto lg:flex`}
+        >
+          <Workspace
+            notes={notes}
+            onNotesChange={setNotes}
+            onGenerate={handleGenerate}
+            loading={loading}
+            error={error}
+            summary={study?.summary ?? null}
+          />
+        </section>
+        <section
+          className={`${activeTab === "Quiz" ? "flex" : "hidden"} min-h-0 flex-col border-l border-[var(--border)] lg:flex`}
+        >
+          <QuizPanel
+            quiz={study?.quiz ?? null}
+            answers={answers}
+            answeredCount={answeredCount}
+            score={score}
+            loading={loading}
+            onChoose={choose}
+            onTryAgain={() => setAnswers({})}
+          />
+        </section>
+      </main>
+    </div>
   );
 }
