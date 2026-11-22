@@ -6,6 +6,28 @@ import QuizPanel, { type QuizQuestion } from "./components/QuizPanel";
 import MobileTabs, { type TabName } from "./components/MobileTabs";
 import TopBar from "./components/TopBar";
 import Workspace from "./components/Workspace";
+import type { PdfAttachment } from "./components/PdfAttach";
+
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
+
+type PdfExtractResult = {
+  text: string;
+  pages: number;
+  truncated: boolean;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPdfExtractResult(value: unknown): value is PdfExtractResult {
+  return (
+    isRecord(value) &&
+    typeof value.text === "string" &&
+    typeof value.pages === "number" &&
+    typeof value.truncated === "boolean"
+  );
+}
 
 type Study = {
   summary: string[];
@@ -20,6 +42,11 @@ export default function Home() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [historyKey, setHistoryKey] = useState(0);
   const [activeTab, setActiveTab] = useState<TabName>("Workspace");
+  const [explanationKey, setExplanationKey] = useState(0);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [pdfAttachment, setPdfAttachment] = useState<PdfAttachment | null>(null);
+  const [showPdfChip, setShowPdfChip] = useState(false);
+  const [isDraggingPdf, setIsDraggingPdf] = useState(false);
 
   async function handleGenerate() {
     if (notes.trim() === "") {
@@ -44,6 +71,7 @@ export default function Home() {
         setError(data.error || "Something went wrong.");
       } else {
         setStudy(data);
+        setExplanationKey((key) => key + 1);
         setHistoryKey((key) => key + 1);
         setActiveTab("Workspace");
       }
@@ -57,6 +85,9 @@ export default function Home() {
   function handleSelect(kit: SavedKit) {
     setNotes(kit.notes);
     setStudy({ summary: kit.summary, quiz: kit.quiz });
+    setExplanationKey((key) => key + 1);
+    setPdfAttachment(null);
+    setShowPdfChip(false);
     setAnswers({});
     setError("");
     setActiveTab("Workspace");
@@ -66,9 +97,66 @@ export default function Home() {
   function handleNewNotes() {
     setNotes("");
     setStudy(null);
+    setPdfAttachment(null);
+    setShowPdfChip(false);
     setAnswers({});
     setError("");
     setActiveTab("Workspace");
+  }
+
+  async function handlePdfFile(file: File) {
+    const isPdf =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      setError("Please choose a PDF file.");
+      return;
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      setError("That PDF is too large. Please use a file under 4 MB.");
+      return;
+    }
+
+    setError("");
+    setUploadingPdf(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/api/extract", {
+        method: "POST",
+        body: form,
+      });
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        const message =
+          isRecord(data) && typeof data.error === "string"
+            ? data.error
+            : "Could not read this PDF. Please try again.";
+        setError(message);
+        return;
+      }
+
+      if (!isPdfExtractResult(data)) {
+        setError("Could not read this PDF. Please try again.");
+        return;
+      }
+
+      setNotes((currentNotes) =>
+        currentNotes.trim() === ""
+          ? data.text
+          : `${currentNotes}\n\n${data.text}`,
+      );
+      setPdfAttachment({
+        fileName: file.name,
+        pages: data.pages,
+        truncated: data.truncated,
+      });
+      setShowPdfChip(true);
+    } catch {
+      setError("Could not reach the server while reading the PDF.");
+    } finally {
+      setUploadingPdf(false);
+    }
   }
 
   function choose(questionIndex: number, optionIndex: number) {
@@ -135,6 +223,14 @@ export default function Home() {
             loading={loading}
             error={error}
             summary={study?.summary ?? null}
+            explanationKey={explanationKey}
+            uploadingPdf={uploadingPdf}
+            pdfAttachment={pdfAttachment}
+            showPdfChip={showPdfChip}
+            isDraggingPdf={isDraggingPdf}
+            onPdfFileSelect={handlePdfFile}
+            onDismissPdf={() => setShowPdfChip(false)}
+            onPdfDragStateChange={setIsDraggingPdf}
           />
         </section>
         <section
