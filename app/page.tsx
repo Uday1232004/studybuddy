@@ -58,7 +58,7 @@ export default function Home() {
         {loading ? "Summarizing..." : "Summarize"}
       </button>
 
-      {result && <div className="mt-6 rounded border p-4">{result}</div>}
+      {result && <div className="mt-6 whitespace-pre-wrap rounded border p-4">{result}</div>}
     </main>
   );
 }
