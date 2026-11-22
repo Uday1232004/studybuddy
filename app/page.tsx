@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SignOutButton from "./SignOutButton";
 
 type QuizQuestion = {
   question: string;
@@ -64,7 +65,10 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-2xl p-6">
-      <h1 className="text-3xl font-bold">StudyBuddy</h1>
+            <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">StudyBuddy</h1>
+        <SignOutButton />
+      </div>
       <p className="mt-2 text-gray-500">
         Paste your notes. Get a summary and a quiz.
       </p>
