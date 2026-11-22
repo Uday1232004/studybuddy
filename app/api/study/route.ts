@@ -1,4 +1,5 @@
 import { askGemini } from "../../../lib/gemini";
+import { createClient } from "../../../lib/supabase/server";
 
 const MAX_CHARS = 20000;
 
@@ -50,6 +51,12 @@ function parseStudyResult(text: string): StudyResult | null {
 }
 
 export async function POST(request: Request) {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getClaims();
+  if (!auth?.claims) {
+    return Response.json({ error: "Please log in first." }, { status: 401 });
+  }
+
   const body = await request.json();
   const notes: string = body.notes ?? "";
 
