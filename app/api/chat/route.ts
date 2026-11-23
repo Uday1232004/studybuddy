@@ -1,5 +1,9 @@
 import { embedTexts } from "../../../lib/embeddings";
 import { askLLM } from "../../../lib/llm";
+import {
+  extractCitations,
+  type CitationSource,
+} from "../../../lib/citations";
 import { buildChatPrompt } from "../../../lib/prompts";
 import { createClient } from "../../../lib/supabase/server";
 
@@ -8,6 +12,7 @@ const MAX_SOURCE_IDS = 20;
 const MAX_NORMAL_CONTEXT_CHARS = 8999;
 const MAX_LESSON_CONTEXT_CHARS = 12000;
 const QUERY_PAGE_SIZE = 1000;
+const CITED_PAGE_CHUNK_LIMIT = 8;
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -15,6 +20,7 @@ type ChatMessage = {
 };
 
 type ContextExcerpt = {
+  source_id?: string;
   source_name: string;
   page: number | null;
   content: string;
@@ -44,6 +50,7 @@ function isSourceChunk(value: unknown): value is SourceChunk {
 function isContextExcerpt(value: unknown): value is ContextExcerpt {
   return (
     isRecord(value) &&
+    (value.source_id === undefined || typeof value.source_id === "string") &&
     typeof value.source_name === "string" &&
     (value.page === null ||
       (typeof value.page === "number" && Number.isFinite(value.page))) &&
@@ -95,6 +102,123 @@ async function loadSourceChunks(
     }
     if (rows.length < QUERY_PAGE_SIZE) return chunks;
   }
+}
+
+async function loadCitationSources(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  sourceIds: string[]
+): Promise<CitationSource[]> {
+  const sources = await Promise.all(
+    sourceIds.map(async (sourceId) => {
+      const { data, error } = await supabase
+        .from("source_chunks")
+        .select("source_id, source_name, page")
+        .eq("user_id", userId)
+        .eq("source_id", sourceId)
+        .not("page", "is", null)
+        .order("page", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (
+        !data ||
+        typeof data.source_id !== "string" ||
+        typeof data.source_name !== "string" ||
+        typeof data.page !== "number"
+      ) {
+        return null;
+      }
+      return {
+        id: data.source_id,
+        name: data.source_name,
+        pages: data.page,
+      };
+    })
+  );
+  return sources.filter(
+    (
+      source
+    ): source is { id: string; name: string; pages: number } =>
+      source !== null
+  );
+}
+
+async function loadCitedPageChunks(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  citations: { sourceId: string; page: number }[]
+): Promise<SourceChunk[][]> {
+  return Promise.all(
+    citations.map(async ({ sourceId, page }) => {
+      const { data, error } = await supabase
+        .from("source_chunks")
+        .select("source_id, source_name, page, chunk_index, content")
+        .eq("user_id", userId)
+        .eq("source_id", sourceId)
+        .eq("page", page)
+        .order("chunk_index", { ascending: true })
+        .limit(CITED_PAGE_CHUNK_LIMIT);
+      if (error) throw new Error(error.message);
+      return (data ?? []).filter(isSourceChunk);
+    })
+  );
+}
+
+async function getPreviousAnswerChunks(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  sourceIds: string[],
+  history: ChatMessage[]
+): Promise<SourceChunk[][]> {
+  const previousAnswer = history
+    .slice(0, -1)
+    .reverse()
+    .find((message) => message.role === "assistant")?.content;
+  if (
+    !previousAnswer ||
+    !/(?:\bp{1,2}\s*\.|pages?)\s*\d/i.test(previousAnswer)
+  ) {
+    return [];
+  }
+
+  const citationSources = await loadCitationSources(
+    supabase,
+    userId,
+    sourceIds
+  );
+  const citations = extractCitations(previousAnswer, citationSources);
+  if (citations.length === 0) return [];
+  return loadCitedPageChunks(supabase, userId, citations);
+}
+
+function orderPageChunksRoundRobin(pageChunks: SourceChunk[][]) {
+  const ordered: SourceChunk[] = [];
+  const maxChunks = Math.max(0, ...pageChunks.map((chunks) => chunks.length));
+  for (let index = 0; index < maxChunks; index++) {
+    for (const chunks of pageChunks) {
+      if (chunks[index]) ordered.push(chunks[index]);
+    }
+  }
+  return ordered;
+}
+
+function appendUniqueExcerpt(
+  context: string,
+  chunk: ContextExcerpt,
+  maxCharacters: number,
+  seen: Set<string>
+) {
+  const key = JSON.stringify([
+    chunk.source_id ?? chunk.source_name,
+    chunk.page,
+    chunk.content,
+  ]);
+  if (seen.has(key)) return context;
+
+  const nextContext = appendExcerpt(context, chunk, maxCharacters);
+  if (nextContext !== context) seen.add(key);
+  return nextContext;
 }
 
 function buildLessonContext(sources: SourceChunk[][]) {
@@ -263,14 +387,24 @@ export async function POST(request: Request) {
         studentMessages.length > 1
           ? studentMessages[studentMessages.length - 2].content
           : "";
+      const latestWordCount = lastStudentMessage
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length;
+      const hasReferenceWord =
+        /\b(?:it|this|that|them|more|again|simpler|example|diagram|figure|picture|image|explain|continue)\b/i.test(
+          lastStudentMessage
+        );
       const queryText =
-        lastStudentMessage.length < 40 && previousStudentMessage !== ""
-          ? `${previousStudentMessage}\n${lastStudentMessage}`
+        previousStudentMessage !== "" &&
+        (latestWordCount < 8 || hasReferenceWord)
+          ? `${lastStudentMessage}\n${previousStudentMessage}`
           : lastStudentMessage;
-      const [queryEmbedding] = await embedTexts(
-        [queryText],
-        "RETRIEVAL_QUERY"
-      );
+      const [embeddings, citedPageChunks] = await Promise.all([
+        embedTexts([queryText], "RETRIEVAL_QUERY"),
+        getPreviousAnswerChunks(supabase, userId, sourceIds, history),
+      ]);
+      const [queryEmbedding] = embeddings;
       const { data, error } = await supabase.rpc("match_chunks", {
         query_embedding: queryEmbedding,
         source_ids: sourceIds,
@@ -279,8 +413,22 @@ export async function POST(request: Request) {
       if (error) throw new Error(error.message);
 
       const matches = Array.isArray(data) ? data.filter(isContextExcerpt) : [];
+      const seenChunks = new Set<string>();
+      for (const citedChunk of orderPageChunksRoundRobin(citedPageChunks)) {
+        context = appendUniqueExcerpt(
+          context,
+          citedChunk,
+          MAX_NORMAL_CONTEXT_CHARS,
+          seenChunks
+        );
+      }
       for (const match of matches) {
-        context = appendExcerpt(context, match, MAX_NORMAL_CONTEXT_CHARS);
+        context = appendUniqueExcerpt(
+          context,
+          match,
+          MAX_NORMAL_CONTEXT_CHARS,
+          seenChunks
+        );
       }
     }
 
