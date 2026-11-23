@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import History, { type SavedKit } from "./History";
 import MobileTabs, { type TabName } from "./components/MobileTabs";
 import TopBar from "./components/TopBar";
-import Workspace from "./components/Workspace";
-import type { PdfAttachment } from "./components/PdfAttach";
+import Workspace, { type Source } from "./components/Workspace";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const MAX_SOURCES = 6;
 
 type PdfExtractResult = {
   text: string;
@@ -29,63 +29,157 @@ function isPdfExtractResult(value: unknown): value is PdfExtractResult {
 }
 
 export default function Home() {
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
+  const sourcesRef = useRef<Source[]>([]);
+  const pdfQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [sourceMessage, setSourceMessage] = useState("");
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabName>("Workspace");
-  const [uploadingPdf, setUploadingPdf] = useState(false);
-  const [pdfAttachment, setPdfAttachment] = useState<PdfAttachment | null>(null);
-  const [showPdfChip, setShowPdfChip] = useState(false);
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
+  const notes = useMemo(
+    () =>
+      sources
+        .filter(
+          (source) =>
+            source.enabled &&
+            !source.loading &&
+            !source.error &&
+            source.text.trim() !== ""
+        )
+        .map(
+          (source) =>
+            `=== SOURCE: ${source.name} ===\n${source.text.trim()}`
+        )
+        .join("\n\n"),
+    [sources]
+  );
+
+  function replaceSources(nextSources: Source[]) {
+    sourcesRef.current = nextSources;
+    setSources(nextSources);
+  }
+
+  function uniqueSourceName(name: string) {
+    const baseName = name.trim() || "Pasted notes";
+    const existingNames = new Set(sourcesRef.current.map((source) => source.name));
+    if (!existingNames.has(baseName)) return baseName;
+
+    let suffix = 2;
+    while (existingNames.has(`${baseName} (${suffix})`)) {
+      suffix++;
+    }
+    return `${baseName} (${suffix})`;
+  }
+
+  function updateSource(id: string, changes: Partial<Source>) {
+    replaceSources(
+      sourcesRef.current.map((source) =>
+        source.id === id ? { ...source, ...changes } : source
+      )
+    );
+  }
 
   function handleSelect(kit: SavedKit) {
     setActiveHistoryId(kit.id);
-    setNotes(kit.notes);
-    setPdfAttachment(null);
-    setShowPdfChip(false);
-    setError("");
+    replaceSources([
+      {
+        id: crypto.randomUUID(),
+        type: "text",
+        name: "Saved notes",
+        text: kit.notes,
+        enabled: true,
+      },
+    ]);
+    setSourceMessage("");
     setActiveTab("Workspace");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleNewNotes() {
     setActiveHistoryId(null);
-    setNotes("");
-    setPdfAttachment(null);
-    setShowPdfChip(false);
-    setError("");
+    replaceSources([]);
+    setSourceMessage("");
     setActiveTab("Workspace");
   }
 
-  function handleNotesChange(value: string) {
+  function handleToggleSource(id: string, enabled: boolean) {
+    replaceSources(
+      sourcesRef.current.map((source) =>
+        source.id === id ? { ...source, enabled } : source
+      )
+    );
     setActiveHistoryId(null);
-    setNotes(value);
+  }
+
+  function handleRemoveSource(id: string) {
+    replaceSources(sourcesRef.current.filter((source) => source.id !== id));
+    setActiveHistoryId(null);
+  }
+
+  function handleAddTextSource(name: string, text: string) {
+    if (sourcesRef.current.length >= MAX_SOURCES) {
+      setSourceMessage("You can add up to 6 sources.");
+      return false;
+    }
+
+    const source: Source = {
+      id: crypto.randomUUID(),
+      type: "text",
+      name: uniqueSourceName(name),
+      text,
+      enabled: true,
+    };
+    replaceSources([...sourcesRef.current, source]);
+    setSourceMessage("");
+    setActiveHistoryId(null);
+    setActiveHistoryId(null);
+    return true;
   }
 
   function handleHistoryItemsDeleted(ids: string[]) {
     if (activeHistoryId && ids.includes(activeHistoryId)) {
       setActiveHistoryId(null);
-      setNotes("");
-      setPdfAttachment(null);
-      setShowPdfChip(false);
-      setError("");
+      replaceSources([]);
+      setSourceMessage("");
     }
   }
 
-  async function handlePdfFile(file: File) {
-    const isPdf =
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      setError("Please choose a PDF file.");
-      return;
-    }
-    if (file.size > MAX_PDF_BYTES) {
-      setError("That PDF is too large. Please use a file under 4 MB.");
+  async function processPdfFile(file: File) {
+    if (sourcesRef.current.length >= MAX_SOURCES) {
+      setSourceMessage("You can add up to 6 sources.");
       return;
     }
 
-    setError("");
-    setUploadingPdf(true);
+    const id = crypto.randomUUID();
+    const source: Source = {
+      id,
+      type: "pdf",
+      name: uniqueSourceName(file.name),
+      text: "",
+      enabled: true,
+      loading: true,
+    };
+    replaceSources([...sourcesRef.current, source]);
+    setActiveHistoryId(null);
+    setSourceMessage("");
+
+    const isPdf =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      updateSource(id, {
+        loading: false,
+        error: "Please choose a PDF file.",
+      });
+      return;
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      updateSource(id, {
+        loading: false,
+        error: "That PDF is too large. Please use a file under 4 MB.",
+      });
+      return;
+    }
+
     try {
       const form = new FormData();
       form.append("file", file);
@@ -100,32 +194,44 @@ export default function Home() {
           isRecord(data) && typeof data.error === "string"
             ? data.error
             : "Could not read this PDF. Please try again.";
-        setError(message);
+        updateSource(id, { loading: false, error: message });
         return;
       }
 
       if (!isPdfExtractResult(data)) {
-        setError("Could not read this PDF. Please try again.");
+        updateSource(id, {
+          loading: false,
+          error: "Could not read this PDF. Please try again.",
+        });
         return;
       }
 
-      setNotes((currentNotes) =>
-        currentNotes.trim() === ""
-          ? data.text
-          : `${currentNotes}\n\n${data.text}`,
-      );
-      setActiveHistoryId(null);
-      setPdfAttachment({
-        fileName: file.name,
+      updateSource(id, {
+        text: data.text,
         pages: data.pages,
         truncated: data.truncated,
+        loading: false,
       });
-      setShowPdfChip(true);
+      setActiveHistoryId(null);
     } catch {
-      setError("Could not reach the server while reading the PDF.");
-    } finally {
-      setUploadingPdf(false);
+      updateSource(id, {
+        loading: false,
+        error: "Could not reach the server while reading the PDF.",
+      });
     }
+  }
+
+  function addPdfFiles(files: File[]) {
+    const queuedFiles = [...files];
+    pdfQueueRef.current = pdfQueueRef.current.then(async () => {
+      for (const file of queuedFiles) {
+        await processPdfFile(file);
+      }
+    });
+  }
+
+  function handlePdfFile(file: File) {
+    addPdfFiles([file]);
   }
 
   return (
@@ -161,14 +267,15 @@ export default function Home() {
         >
           <Workspace
             notes={notes}
-            onNotesChange={handleNotesChange}
-            error={error}
-            uploadingPdf={uploadingPdf}
-            pdfAttachment={pdfAttachment}
-            showPdfChip={showPdfChip}
+            sources={sources}
+            sourceMessage={sourceMessage}
+            uploadingPdf={sources.some((source) => source.loading)}
             isDraggingPdf={isDraggingPdf}
             onPdfFileSelect={handlePdfFile}
-            onDismissPdf={() => setShowPdfChip(false)}
+            onAddPdfFiles={addPdfFiles}
+            onAddTextSource={handleAddTextSource}
+            onToggleSource={handleToggleSource}
+            onRemoveSource={handleRemoveSource}
             onPdfDragStateChange={setIsDraggingPdf}
           />
         </section>
