@@ -1,4 +1,18 @@
-export type PlannerModule = { name: string; pages: number };
+// One topic found inside a module (this is what the AI scan will give us).
+export type PlannerTopic = {
+  title: string;
+  startPage: number;
+  endPage: number;
+  difficulty: number; // 1-5
+  priority: number; // 1 = study first
+};
+
+export type PlannerModule = {
+  name: string;
+  pages: number;
+  topics?: PlannerTopic[]; // optional: without topics the whole module is one block
+  priority?: number; // optional: lower = study this module earlier (default: list order)
+};
 
 export type PlannerExam = {
   id: string;
@@ -90,16 +104,23 @@ function formatHours(minutes: number): string {
 
 // ---------- per-exam state ----------
 
-type ModState = { name: string; pages: number; total: number };
+// One block of study: a whole module, or one topic inside a module.
+type Unit = {
+  moduleName: string;
+  title: string | null; // null = the whole module (no topic)
+  start: number; // first page (absolute, 1-based)
+  count: number; // number of pages
+  total: number; // minutes for the whole block
+};
 
 type ExamState = {
   exam: PlannerExam;
   examDay: number;
   days: number[]; // study days, in order
   dayIndex: Map<number, number>;
-  mods: ModState[];
-  modIdx: number; // which module we are on
-  pageDone: number; // pages finished in that module
+  units: Unit[];
+  unitIdx: number; // which block we are on
+  pageDone: number; // pages finished in that block
   learnTotal: number;
   learnPlanned: number;
   learnDays: number; // how many days the learning is spread over
@@ -110,13 +131,90 @@ type ExamState = {
   planned: number;
 };
 
-// Minutes for pages a..b of a module. Uses cumulative rounding so the pieces
-// of a module always add up to exactly the module's total.
-function minutesFor(mod: ModState, a: number, b: number): number {
+// Minutes for pages a..b of a block (a and b count from 1 inside the block).
+// Uses cumulative rounding so the pieces of a block add up to exactly its total.
+function minutesFor(unit: Unit, a: number, b: number): number {
   return (
-    Math.round((mod.total * b) / mod.pages) -
-    Math.round((mod.total * (a - 1)) / mod.pages)
+    Math.round((unit.total * b) / unit.count) -
+    Math.round((unit.total * (a - 1)) / unit.count)
   );
+}
+
+function tenthsFor(difficulty: number): number {
+  // difficulty 1 -> x0.9 ... difficulty 5 -> x1.3 (whole tenths, no float errors)
+  return 9 + (difficulty - 1);
+}
+
+function minutesForPages(pages: number, difficulty: number): number {
+  return Math.ceil((pages * MINUTES_PER_PAGE * tenthsFor(difficulty)) / 10);
+}
+
+const LATE = 1_000_000; // sorts after every real priority
+
+// Turn one module into blocks of study: its topics in the AI's order, with
+// any pages the topics missed added at the end, so every page is planned once.
+function buildUnits(mod: PlannerModule, examDifficulty: number): Unit[] {
+  const pages = Math.floor(mod.pages);
+  if (!Number.isFinite(pages) || pages < 1) return [];
+
+  const whole = (): Unit[] => [
+    {
+      moduleName: mod.name,
+      title: null,
+      start: 1,
+      count: pages,
+      total: minutesForPages(pages, examDifficulty),
+    },
+  ];
+
+  if (!mod.topics || mod.topics.length === 0) return whole();
+
+  type Raw = { title: string; start: number; end: number; difficulty: number; priority: number };
+  const raw: Raw[] = [];
+  for (const t of mod.topics) {
+    const start = Math.max(1, Math.floor(t.startPage));
+    const end = Math.min(pages, Math.floor(t.endPage));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+    const title = String(t.title ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "Topic";
+    raw.push({
+      title,
+      start,
+      end,
+      difficulty: clampInt(t.difficulty, 1, 5, examDifficulty),
+      priority: Number.isFinite(t.priority) ? t.priority : LATE,
+    });
+  }
+  if (raw.length === 0) return whole();
+
+  raw.sort((a, b) => a.start - b.start || a.end - b.end);
+
+  type Block = Raw & { gap: boolean };
+  const blocks: Block[] = [];
+  let covered = 0; // highest page already given to a block
+  for (const t of raw) {
+    const start = Math.max(t.start, covered + 1);
+    if (start > t.end) continue; // fully inside an earlier topic
+    if (start > covered + 1) {
+      blocks.push({ title: "Other pages", start: covered + 1, end: start - 1, difficulty: examDifficulty, priority: LATE, gap: true });
+    }
+    blocks.push({ ...t, start, gap: false });
+    covered = t.end;
+  }
+  if (covered < pages) {
+    blocks.push({ title: "Other pages", start: covered + 1, end: pages, difficulty: examDifficulty, priority: LATE, gap: true });
+  }
+
+  blocks.sort((a, b) => a.priority - b.priority || a.start - b.start);
+  return blocks.map((b) => {
+    const count = b.end - b.start + 1;
+    return {
+      moduleName: mod.name,
+      title: b.title,
+      start: b.start,
+      count,
+      total: minutesForPages(count, b.difficulty),
+    };
+  });
 }
 
 function pageLabel(a: number, b: number): string {
@@ -160,21 +258,14 @@ export function buildPlan(
 
     const difficulty = clampInt(exam.difficulty, 1, 5, 3);
     const credits = clampInt(exam.credits, 1, 10, 3);
-    // difficulty 1 -> x0.9 ... difficulty 5 -> x1.3 (whole tenths, no float errors)
-    const tenths = 9 + (difficulty - 1);
 
-    const mods: ModState[] = [];
-    for (const m of exam.modules) {
-      const pages = Math.floor(m.pages);
-      if (!Number.isFinite(pages) || pages < 1) continue;
-      mods.push({
-        name: m.name,
-        pages,
-        total: Math.ceil((pages * MINUTES_PER_PAGE * tenths) / 10),
-      });
-    }
+    // Modules in study order, each cut into blocks.
+    const ordered = exam.modules
+      .map((m, i) => ({ m, i, order: Number.isFinite(m.priority) ? (m.priority as number) : i }))
+      .sort((a, b) => a.order - b.order || a.i - b.i);
+    const units: Unit[] = ordered.flatMap(({ m }) => buildUnits(m, difficulty));
 
-    if (mods.length === 0) {
+    if (units.length === 0) {
       warnings.push(
         `${exam.subject}: no module pages were found, so it was skipped. Link a chat with PDFs first.`
       );
@@ -188,7 +279,7 @@ export function buildPlan(
       continue;
     }
 
-    const learnTotal = mods.reduce((sum, m) => sum + m.total, 0);
+    const learnTotal = units.reduce((sum, u) => sum + u.total, 0);
     const reviseTotal = Math.max(
       MIN_REVISION_MINUTES,
       Math.ceil(learnTotal * REVISION_SHARE)
@@ -204,8 +295,8 @@ export function buildPlan(
       examDay,
       days,
       dayIndex: new Map(days.map((d, i) => [d, i])),
-      mods,
-      modIdx: 0,
+      units,
+      unitIdx: 0,
       pageDone: 0,
       learnTotal,
       learnPlanned: 0,
@@ -258,42 +349,49 @@ export function buildPlan(
             : s.learnTotal;
         let used = 0;
 
-        while (s.modIdx < s.mods.length) {
-          const mod = s.mods[s.modIdx];
+        while (s.unitIdx < s.units.length) {
+          const unit = s.units[s.unitIdx];
           const start = s.pageDone + 1;
-          const perPage = mod.total / mod.pages;
+          const perPage = unit.total / unit.count;
           let end = s.pageDone;
 
-          while (end < mod.pages) {
-            const cost = minutesFor(mod, start, end + 1);
+          while (end < unit.count) {
+            const cost = minutesFor(unit, start, end + 1);
             if (used + cost > capacity) break;
             if (s.learnPlanned + used + cost - perPage / 2 > target + 1e-9) break;
             end++;
           }
           if (end < start) break;
 
-          const pieceMinutes = minutesFor(mod, start, end);
+          const pieceMinutes = minutesFor(unit, start, end);
           const count = end - start + 1;
           const parts = Math.min(count, Math.ceil(pieceMinutes / MAX_SESSION_MINUTES));
           for (let i = 0; i < parts; i++) {
             const a = start + Math.floor((count * i) / parts);
             const b = start + Math.floor((count * (i + 1)) / parts) - 1;
+            const first = unit.start + a - 1; // real page numbers in the PDF
+            const last = unit.start + b - 1;
+            const word = first === last ? "page" : "pages";
+            const where = `${word} ${pageLabel(first, last)}`;
             tasks.push({
               examId: s.exam.id,
-              module: mod.name,
-              title: `${subject}: ${mod.name}, ${a === b ? "page" : "pages"} ${pageLabel(a, b)}`,
+              module: unit.moduleName,
+              title:
+                unit.title === null
+                  ? `${subject}: ${unit.moduleName}, ${where}`
+                  : `${subject}: ${unit.title} (${unit.moduleName}, ${where})`,
               kind: "learn",
-              pages: pageLabel(a, b),
+              pages: pageLabel(first, last),
               taskDate: formatDay(day),
-              minutes: minutesFor(mod, a, b),
+              minutes: minutesFor(unit, a, b),
               position: position++,
             });
           }
 
           used += pieceMinutes;
           s.pageDone = end;
-          if (end === mod.pages) {
-            s.modIdx++;
+          if (end === unit.count) {
+            s.unitIdx++;
             s.pageDone = 0;
           } else {
             break; // today's share is used up

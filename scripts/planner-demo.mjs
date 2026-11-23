@@ -1,10 +1,24 @@
 import { buildPlan } from "../lib/planner.ts";
 
 const exams = [
-  { id: "dbms", subject: "DBMS", examDate: "2026-11-30", credits: 4, difficulty: 4,
-    modules: [{ name: "Module 1", pages: 24 }, { name: "Module 2", pages: 30 }] },
-  { id: "os", subject: "Operating Systems", examDate: "2026-12-02", credits: 3, difficulty: 3,
-    modules: [{ name: "Module 1", pages: 40 }] },
+  {
+    id: "dbms", subject: "DBMS", examDate: "2026-11-30", credits: 4, difficulty: 4,
+    modules: [
+      {
+        name: "Module 1", pages: 24,
+        topics: [
+          { title: "Relational model basics", startPage: 1, endPage: 8, difficulty: 2, priority: 2 },
+          { title: "Relational algebra", startPage: 9, endPage: 18, difficulty: 5, priority: 1 },
+          { title: "Keys and constraints", startPage: 19, endPage: 24, difficulty: 3, priority: 3 },
+        ],
+      },
+      { name: "Module 2", pages: 30 },
+    ],
+  },
+  {
+    id: "os", subject: "Operating Systems", examDate: "2026-12-02", credits: 3, difficulty: 3,
+    modules: [{ name: "Module 1", pages: 40 }],
+  },
 ];
 
 const { tasks, warnings, summaries } = buildPlan(exams, {

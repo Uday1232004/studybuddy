@@ -158,4 +158,113 @@ test("no task is longer than 90 minutes and every task has minutes", () => {
   for (const t of tasks) assert.ok(t.minutes > 0 && t.minutes <= 90, t.title);
 });
 
+// ---- tests for AI topics (difficulty and study order) ----
+
+const topicExam = (topics, extra = {}) =>
+  exam({
+    examDate: "2026-12-07",
+    modules: [{ name: "Module 1", pages: 30, topics }],
+    ...extra,
+  });
+
+const learnOf = (tasks) => tasks.filter((t) => t.kind === "learn");
+
+const pagesCovered = (tasks) => {
+  const seen = [];
+  for (const t of learnOf(tasks)) {
+    const [a, b] = t.pages.split("-").map(Number);
+    for (let p = a; p <= (b ?? a); p++) seen.push(p);
+  }
+  return seen.sort((x, y) => x - y);
+};
+
+test("topics are studied in the order the AI ranked them", () => {
+  const { tasks } = buildPlan(
+    [
+      topicExam([
+        { title: "Basics", startPage: 1, endPage: 10, difficulty: 2, priority: 3 },
+        { title: "Joins", startPage: 11, endPage: 20, difficulty: 4, priority: 1 },
+        { title: "Indexes", startPage: 21, endPage: 30, difficulty: 3, priority: 2 },
+      ]),
+    ],
+    settings()
+  );
+  const order = [];
+  for (const t of learnOf(tasks)) {
+    const name = ["Joins", "Indexes", "Basics"].find((n) => t.title.includes(n));
+    if (!order.includes(name)) order.push(name);
+  }
+  assert.deepEqual(order, ["Joins", "Indexes", "Basics"]);
+  assert.ok(learnOf(tasks)[0].title.startsWith("DBMS: Joins (Module 1, pages 11-"));
+});
+
+test("every page is planned exactly once, even if topics have gaps or overlap", () => {
+  const { tasks } = buildPlan(
+    [
+      topicExam([
+        { title: "A", startPage: 1, endPage: 10, difficulty: 3, priority: 1 },
+        { title: "B", startPage: 8, endPage: 14, difficulty: 3, priority: 2 }, // overlaps A
+        { title: "C", startPage: 20, endPage: 40, difficulty: 3, priority: 3 }, // gap 15-19, runs past the end
+      ]),
+    ],
+    settings()
+  );
+  const pages = pagesCovered(tasks);
+  assert.equal(pages.length, 30);
+  assert.deepEqual(pages, Array.from({ length: 30 }, (_, i) => i + 1));
+});
+
+test("harder topics get more minutes per page", () => {
+  const { tasks } = buildPlan(
+    [
+      topicExam([
+        { title: "Easy", startPage: 1, endPage: 15, difficulty: 1, priority: 1 },
+        { title: "Hard", startPage: 16, endPage: 30, difficulty: 5, priority: 2 },
+      ]),
+    ],
+    settings()
+  );
+  const easy = sum(learnOf(tasks).filter((t) => t.title.includes("Easy")));
+  const hard = sum(learnOf(tasks).filter((t) => t.title.includes("Hard")));
+  assert.equal(easy, 81); // 15 pages x 6 min x 0.9
+  assert.equal(hard, 117); // 15 pages x 6 min x 1.3
+});
+
+test("bad topic data is cleaned up instead of crashing", () => {
+  const { tasks, warnings } = buildPlan(
+    [
+      topicExam([
+        { title: "   ", startPage: 1, endPage: 10, difficulty: 99, priority: NaN },
+        { title: "Broken", startPage: 20, endPage: 5, difficulty: 3, priority: 1 },
+      ]),
+    ],
+    settings()
+  );
+  assert.equal(warnings.length, 0);
+  assert.equal(pagesCovered(tasks).length, 30);
+  for (const t of tasks) assert.ok(t.minutes > 0 && t.title.length > 0);
+});
+
+test("a module with no topics still works like before", () => {
+  const withTopics = buildPlan([topicExam([])], settings());
+  const without = buildPlan([exam({ examDate: "2026-12-07" })], settings());
+  assert.deepEqual(withTopics, without);
+});
+
+test("modules can be ordered with priority", () => {
+  const { tasks } = buildPlan(
+    [
+      exam({
+        examDate: "2026-12-07",
+        modules: [
+          { name: "Module 1", pages: 10 },
+          { name: "Module 2", pages: 10, priority: -1 },
+        ],
+      }),
+    ],
+    settings()
+  );
+  assert.equal(learnOf(tasks)[0].module, "Module 2");
+});
+
 console.log(`\n${passed} tests passed`);
