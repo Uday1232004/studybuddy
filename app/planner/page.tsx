@@ -16,6 +16,11 @@ import {
 } from "@/lib/planner";
 import type { AnalysisTopic } from "@/lib/analysis";
 import { createClient } from "@/lib/supabase/client";
+import {
+  addPdfSource,
+  type UploadedPdfSource,
+} from "@/lib/source-upload";
+import { buildLearnUrl } from "@/lib/learn-link";
 
 type Exam = {
   id: string;
@@ -35,6 +40,30 @@ type SavedChat = {
   id: string;
   title: string | null;
   sources: unknown;
+};
+
+type PlannerPdfSource = Omit<UploadedPdfSource, "enabled"> & {
+  enabled: boolean;
+};
+
+type PdfUploadJob = {
+  key: string;
+  examId: string;
+  file: File;
+  status: "queued" | "running" | "linking" | "done" | "error" | "cancelled";
+  statusText: string;
+  error: string;
+  uploadWarning: string;
+  source: UploadedPdfSource | null;
+  historyId: string | null;
+};
+
+type HistoryItemResponse = {
+  id: string;
+  title: string | null;
+  sources: unknown[];
+  messages: unknown[];
+  notes: string;
 };
 
 type PlanTask = {
@@ -115,6 +144,8 @@ const TASK_COLUMNS =
 const PLAN_COLUMNS = "id, title, status, start_date, created_at";
 const ANALYSIS_COLUMNS =
   "id, exam_id, chat_id, module_name, pages, overall_difficulty, summary, topics, model";
+const SOURCE_UUID_PATTERN =
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const WEEKDAYS = [
   { label: "Sun", value: 0 },
   { label: "Mon", value: 1 },
@@ -179,6 +210,85 @@ function parseChat(value: unknown): SavedChat | null {
     return null;
   }
   return { id: value.id, title: value.title, sources: value.sources };
+}
+
+function parsePlannerPdfSource(value: unknown): PlannerPdfSource | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !SOURCE_UUID_PATTERN.test(value.id) ||
+    typeof value.name !== "string" ||
+    value.type !== "pdf" ||
+    typeof value.enabled !== "boolean" ||
+    typeof value.pages !== "number" ||
+    !Number.isInteger(value.pages) ||
+    value.pages < 1 ||
+    !(typeof value.filePath === "string" || value.filePath === null) ||
+    typeof value.fileSize !== "number" ||
+    !Number.isFinite(value.fileSize) ||
+    value.fileSize < 0
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    type: "pdf",
+    name: value.name,
+    enabled: value.enabled,
+    pages: value.pages,
+    filePath: value.filePath,
+    fileSize: value.fileSize,
+  };
+}
+
+function findPdfSourceByName(
+  chat: SavedChat | undefined,
+  name: string
+): PlannerPdfSource | null {
+  if (!chat || !Array.isArray(chat.sources)) return null;
+  const source = chat.sources.find(
+    (item) => isRecord(item) && item.type === "pdf" && item.name === name
+  );
+  return parsePlannerPdfSource(source);
+}
+
+async function readResponseJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function responseError(payload: unknown, fallback: string): string {
+  if (
+    isRecord(payload) &&
+    typeof payload.error === "string" &&
+    payload.error.trim() !== ""
+  ) {
+    return payload.error;
+  }
+  return fallback;
+}
+
+function parseHistoryItem(value: unknown): HistoryItemResponse | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !(typeof value.title === "string" || value.title === null) ||
+    !Array.isArray(value.sources) ||
+    !Array.isArray(value.messages) ||
+    !(typeof value.notes === "string" || value.notes === undefined)
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    title: value.title,
+    sources: value.sources,
+    messages: value.messages,
+    notes: typeof value.notes === "string" ? value.notes : "",
+  };
 }
 
 function parseTask(value: unknown): PlanTask | null {
@@ -380,6 +490,21 @@ function formatTaskDate(value: string): string {
   }).format(new Date(year, month - 1, day));
 }
 
+function parseTaskPages(pages: string | null): {
+  pageStart: number | null;
+  pageEnd: number | null;
+} {
+  if (!pages) return { pageStart: null, pageEnd: null };
+  const numbers = Array.from(pages.matchAll(/\d+/g), (match) =>
+    Number(match[0])
+  ).filter((number) => Number.isInteger(number) && number > 0);
+  if (numbers.length === 0) return { pageStart: null, pageEnd: null };
+  return {
+    pageStart: numbers[0],
+    pageEnd: numbers.length > 1 ? numbers[numbers.length - 1] : numbers[0],
+  };
+}
+
 function modulesFromChat(chat: SavedChat | undefined): PlannerModule[] | null {
   if (!chat || !Array.isArray(chat.sources)) return null;
   const pdfSources = chat.sources.filter(
@@ -459,6 +584,12 @@ export default function PlannerPage() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [chats, setChats] = useState<SavedChat[]>([]);
   const [analyses, setAnalyses] = useState<ModuleAnalysisRow[]>([]);
+  const [pdfUploadJobs, setPdfUploadJobs] = useState<PdfUploadJob[]>([]);
+  const [removePdfConfirmation, setRemovePdfConfirmation] = useState<{
+    examId: string;
+    sourceId: string;
+  } | null>(null);
+  const [removingPdfId, setRemovingPdfId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<PlanTask[]>([]);
   const [legacyTasks, setLegacyTasks] = useState<PlanTask[]>([]);
   const [plans, setPlans] = useState<SavedPlan[]>([]);
@@ -520,6 +651,15 @@ export default function PlannerPage() {
   const [summaries, setSummaries] = useState<
     { subject: string; plannedMinutes: number; unscheduledMinutes: number }[]
   >([]);
+  const examsRef = useRef(exams);
+  const chatsRef = useRef(chats);
+  const pdfUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pdfUploadControllersRef = useRef<Map<string, AbortController>>(
+    new Map()
+  );
+  const dailyQuotaStoppedRef = useRef(false);
+  examsRef.current = exams;
+  chatsRef.current = chats;
 
   const isRequestRunning =
     savingSettings ||
@@ -527,6 +667,13 @@ export default function PlannerPage() {
     buildingPlan ||
     planActionBusy !== null ||
     deletingExamIds.size > 0 ||
+    removingPdfId !== null ||
+    pdfUploadJobs.some(
+      (job) =>
+        job.status === "queued" ||
+        job.status === "running" ||
+        job.status === "linking"
+    ) ||
     updatingTaskIds.size > 0 ||
     scanningModuleKeys.size > 0 ||
     savingAnalysisIds.size > 0;
@@ -653,16 +800,17 @@ export default function PlannerPage() {
         const parsedAnalyses = parseRows(rawAnalyses, parseModuleAnalysis);
 
         if (!examsResult.error) {
-          setExams(
-            parsedExams.rows.sort((a, b) =>
-              a.exam_date.localeCompare(b.exam_date)
-            )
+          const loadedExams = parsedExams.rows.sort((a, b) =>
+            a.exam_date.localeCompare(b.exam_date)
           );
+          examsRef.current = loadedExams;
+          setExams(loadedExams);
           if (parsedExams.invalid) {
             callErrors.push("Some saved subjects could not be read.");
           }
         }
         if (!chatsResult.error) {
+          chatsRef.current = parsedChats.rows;
           setChats(parsedChats.rows);
           if (parsedChats.invalid) {
             callErrors.push("Some saved chats could not be read.");
@@ -708,6 +856,465 @@ export default function PlannerPage() {
       active = false;
     };
   }, [reloadPlansAndTasks]);
+
+  async function reloadPlannerModuleData() {
+    const supabase = createClient();
+    const [examResult, chatResult, analysisResult] = await Promise.all([
+      supabase
+        .from("exams")
+        .select("id, subject, exam_date, credits, difficulty, chat_id")
+        .order("exam_date", { ascending: true }),
+      supabase
+        .from("study_kits")
+        .select("id, title, sources")
+        .order("title", { ascending: true }),
+      supabase.from("module_analyses").select(ANALYSIS_COLUMNS),
+    ]);
+    const errors = [
+      examResult.error?.message,
+      chatResult.error?.message,
+      analysisResult.error?.message,
+    ].filter((message): message is string => Boolean(message));
+    if (errors.length > 0) throw new Error(errors.join(" "));
+
+    const parsedExams = parseRows(examResult.data as unknown, parseExam);
+    const parsedChats = parseRows(chatResult.data as unknown, parseChat);
+    const parsedAnalyses = parseRows(
+      analysisResult.data as unknown,
+      parseModuleAnalysis
+    );
+    const parseErrors = [
+      parsedExams.invalid ? "Some updated subjects could not be read." : "",
+      parsedChats.invalid ? "Some updated PDF sources could not be read." : "",
+      parsedAnalyses.invalid ? "Some updated module analyses could not be read." : "",
+    ].filter(Boolean);
+
+    const loadedExams = parsedExams.rows.sort((a, b) =>
+      a.exam_date.localeCompare(b.exam_date)
+    );
+    examsRef.current = loadedExams;
+    chatsRef.current = parsedChats.rows;
+    setExams(loadedExams);
+    setChats(parsedChats.rows);
+    setAnalyses(parsedAnalyses.rows);
+    setManualModules((current) => {
+      const next = { ...current };
+      for (const exam of loadedExams) {
+        if (!next[exam.id]) next[exam.id] = [{ name: "", pages: "" }];
+      }
+      return next;
+    });
+    if (parseErrors.length > 0) setError(parseErrors.join(" "));
+  }
+
+  function updatePdfUploadJob(key: string, changes: Partial<PdfUploadJob>) {
+    setPdfUploadJobs((current) =>
+      current.map((job) => (job.key === key ? { ...job, ...changes } : job))
+    );
+  }
+
+  function getUniquePdfName(
+    fileName: string,
+    existingNames: Set<string>
+  ): string {
+    const baseName = fileName.trim().slice(0, 120) || "Uploaded PDF";
+    if (!existingNames.has(baseName)) return baseName;
+    let suffix = 2;
+    while (true) {
+      const suffixText = ` (${suffix})`;
+      const candidate = `${baseName.slice(0, 120 - suffixText.length)}${suffixText}`;
+      if (!existingNames.has(candidate)) return candidate;
+      suffix++;
+    }
+  }
+
+  function queuePdfUploads(exam: Exam, files: File[]) {
+    if (isRequestRunning || removePdfConfirmation !== null) return;
+    setError("");
+    setNotice("");
+    const chat = exam.chat_id
+      ? chatsRef.current.find((item) => item.id === exam.chat_id)
+      : undefined;
+    if (exam.chat_id && !chat) {
+      setError("Could not load this subject's linked chat. Reload the page and try again.");
+      return;
+    }
+
+    const existingSources = Array.isArray(chat?.sources) ? chat.sources : [];
+    const reservedJobs = pdfUploadJobs.filter(
+      (job) =>
+        job.examId === exam.id &&
+        (job.status === "queued" ||
+          job.status === "running" ||
+          job.status === "linking" ||
+          (job.status === "error" && job.source !== null))
+    );
+    const available = Math.max(
+      0,
+      20 - existingSources.length - reservedJobs.length
+    );
+    if (files.length > available) {
+      setError("A subject can have at most 20 sources.");
+    }
+    if (available === 0) return;
+
+    const existingNames = new Set<string>();
+    for (const source of existingSources) {
+      if (isRecord(source) && typeof source.name === "string") {
+        existingNames.add(source.name);
+      }
+    }
+    for (const job of pdfUploadJobs) {
+      if (
+        job.examId === exam.id &&
+        job.status !== "cancelled" &&
+        (job.status !== "error" || job.source !== null)
+      ) {
+        existingNames.add(job.file.name);
+      }
+    }
+
+    const newJobs = files.slice(0, available).map((file) => {
+      const uniqueName = getUniquePdfName(file.name, existingNames);
+      existingNames.add(uniqueName);
+      const namedFile = new File([file], uniqueName, {
+        type: file.type || "application/pdf",
+        lastModified: file.lastModified,
+      });
+      return {
+        key: crypto.randomUUID(),
+        examId: exam.id,
+        file: namedFile,
+        status: "queued" as const,
+        statusText: "Waiting to start...",
+        error: "",
+        uploadWarning: "",
+        source: null,
+        historyId: null,
+      };
+    });
+
+    setPdfUploadJobs((current) => [...current, ...newJobs]);
+    for (const job of newJobs) {
+      pdfUploadQueueRef.current = pdfUploadQueueRef.current.then(
+        () => processPdfUploadJob(job),
+        () => processPdfUploadJob(job)
+      );
+    }
+  }
+
+  async function savePdfSourceToSubject(
+    job: PdfUploadJob,
+    source: UploadedPdfSource
+  ) {
+    const exam = examsRef.current.find((item) => item.id === job.examId);
+    if (!exam) throw new Error("This subject could not be found.");
+
+    let chatId = exam.chat_id;
+    if (!chatId) {
+      chatId = job.historyId;
+      if (!chatId) {
+        const response = await fetch("/api/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: `${exam.subject} (planner)`,
+            sources: [source],
+            messages: [],
+          }),
+        });
+        const payload = await readResponseJson(response);
+        if (!response.ok) {
+          throw new Error(
+            responseError(payload, "Could not create a chat for this subject.")
+          );
+        }
+        if (!isRecord(payload) || typeof payload.id !== "string") {
+          throw new Error("The new chat response did not include an ID.");
+        }
+        chatId = payload.id;
+        updatePdfUploadJob(job.key, { historyId: chatId });
+      }
+
+      const { error: linkError } = await createClient()
+        .from("exams")
+        .update({ chat_id: chatId })
+        .eq("id", exam.id);
+      if (linkError) throw new Error(linkError.message);
+
+      const nextExams = examsRef.current.map((item) =>
+        item.id === exam.id ? { ...item, chat_id: chatId } : item
+      );
+      examsRef.current = nextExams;
+      setExams(nextExams);
+      return;
+    }
+
+    const response = await fetch(`/api/history/${encodeURIComponent(chatId)}`);
+    const payload = await readResponseJson(response);
+    if (!response.ok) {
+      throw new Error(
+        responseError(payload, "Could not load this subject's chat.")
+      );
+    }
+    const history = parseHistoryItem(payload);
+    if (!history) throw new Error("The linked chat data could not be read.");
+
+    const alreadyAdded = history.sources.some(
+      (item) => isRecord(item) && item.id === source.id
+    );
+    if (alreadyAdded) return;
+
+    const updateResponse = await fetch(
+      `/api/history/${encodeURIComponent(chatId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: history.title || `${exam.subject} (planner)`,
+          sources: [...history.sources, source],
+          messages: history.messages,
+        }),
+      }
+    );
+    const updatePayload = await readResponseJson(updateResponse);
+    if (!updateResponse.ok) {
+      throw new Error(
+        responseError(updatePayload, "Could not add the PDF to this chat.")
+      );
+    }
+    if (!isRecord(updatePayload) || typeof updatePayload.id !== "string") {
+      throw new Error("The chat update response was not valid.");
+    }
+  }
+
+  async function processPdfUploadJob(job: PdfUploadJob): Promise<void> {
+    if (dailyQuotaStoppedRef.current) {
+      updatePdfUploadJob(job.key, {
+        status: "error",
+        statusText: "Indexing stopped.",
+        error:
+          "The daily Gemini embedding limit is used up. Try again tomorrow, or enable billing for the Gemini key.",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    pdfUploadControllersRef.current.set(job.key, controller);
+    updatePdfUploadJob(job.key, {
+      status: "running",
+      statusText: "Starting...",
+      error: "",
+    });
+
+    try {
+      let source = job.source;
+      let uploadWarning = job.uploadWarning;
+      if (!source) {
+        source = await addPdfSource(job.file, {
+          onStatus: (statusText) => {
+            if (statusText.startsWith("Original could not be saved:")) {
+              uploadWarning = statusText;
+              updatePdfUploadJob(job.key, {
+                statusText: "Continuing without a saved original...",
+                uploadWarning,
+              });
+              return;
+            }
+            updatePdfUploadJob(job.key, { statusText });
+          },
+          signal: controller.signal,
+        });
+        updatePdfUploadJob(job.key, { source, uploadWarning });
+      }
+
+      if (controller.signal.aborted) {
+        throw new DOMException("The PDF upload was cancelled.", "AbortError");
+      }
+      updatePdfUploadJob(job.key, {
+        status: "linking",
+        statusText: uploadWarning
+          ? "Saving this PDF to the subject without its original file..."
+          : "Saving this PDF to the subject...",
+      });
+      pdfUploadControllersRef.current.delete(job.key);
+
+      await savePdfSourceToSubject(job, source);
+      await reloadPlannerModuleData();
+      updatePdfUploadJob(job.key, {
+        status: "done",
+        statusText: uploadWarning
+          ? "PDF added, but its original file was not saved."
+          : "PDF added to this subject.",
+        uploadWarning,
+        error: "",
+      });
+    } catch (uploadError) {
+      const quotaReached =
+        uploadError instanceof Error &&
+        (uploadError.name === "DailyQuotaError" ||
+          /daily.*(?:gemini|embedding).*limit|daily quota/i.test(
+            uploadError.message
+          ));
+      if (quotaReached) dailyQuotaStoppedRef.current = true;
+      const cancelled =
+        controller.signal.aborted ||
+        (uploadError instanceof Error && uploadError.name === "AbortError");
+      updatePdfUploadJob(job.key, {
+        status: cancelled ? "cancelled" : "error",
+        statusText: cancelled ? "Upload cancelled." : "Upload failed.",
+        error: cancelled
+          ? ""
+          : getErrorMessage(uploadError, "Could not upload this PDF."),
+      });
+    } finally {
+      pdfUploadControllersRef.current.delete(job.key);
+    }
+  }
+
+  function cancelPdfUpload(job: PdfUploadJob) {
+    const controller = pdfUploadControllersRef.current.get(job.key);
+    if (!controller) return;
+    controller.abort();
+    updatePdfUploadJob(job.key, { statusText: "Cancelling..." });
+  }
+
+  function retryPdfUpload(job: PdfUploadJob) {
+    if (job.status !== "error") return;
+    const retry = {
+      ...job,
+      status: "queued" as const,
+      statusText: "Waiting to retry...",
+      error: "",
+      uploadWarning: job.source ? job.uploadWarning : "",
+    };
+    updatePdfUploadJob(job.key, retry);
+    pdfUploadQueueRef.current = pdfUploadQueueRef.current.then(
+      () => processPdfUploadJob(retry),
+      () => processPdfUploadJob(retry)
+    );
+  }
+
+  async function removePdfFromSubject(
+    exam: Exam,
+    source: PlannerPdfSource
+  ) {
+    if (isRequestRunning) return;
+    if (!exam.chat_id) {
+      setError("This subject no longer has a linked chat.");
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setRemovingPdfId(source.id);
+    const cleanupErrors: string[] = [];
+    try {
+      const supabase = createClient();
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw new Error(authError.message);
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("Please sign in before removing this PDF.");
+
+      const expectedPath = `${userId}/${source.id}.pdf`;
+      if (source.filePath !== null && source.filePath !== expectedPath) {
+        throw new Error("The stored PDF path did not match this source.");
+      }
+
+      const response = await fetch(
+        `/api/history/${encodeURIComponent(exam.chat_id)}`
+      );
+      const payload = await readResponseJson(response);
+      if (!response.ok) {
+        throw new Error(
+          responseError(payload, "Could not load this subject's chat.")
+        );
+      }
+      const history = parseHistoryItem(payload);
+      if (!history) throw new Error("The linked chat data could not be read.");
+
+      const remainingSources = history.sources.filter(
+        (item) => !isRecord(item) || item.id !== source.id
+      );
+      if (remainingSources.length !== history.sources.length) {
+        const updateResponse = await fetch(
+          `/api/history/${encodeURIComponent(exam.chat_id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: history.title || `${exam.subject} (planner)`,
+              sources: remainingSources,
+              messages: history.messages,
+            }),
+          }
+        );
+        const updatePayload = await readResponseJson(updateResponse);
+        if (!updateResponse.ok) {
+          throw new Error(
+            responseError(updatePayload, "Could not remove this PDF from the chat.")
+          );
+        }
+        if (!isRecord(updatePayload) || typeof updatePayload.id !== "string") {
+          throw new Error("The chat update response was not valid.");
+        }
+      }
+
+      setRemovePdfConfirmation(null);
+      if (source.filePath === expectedPath) {
+        const { error: fileError } = await supabase.storage
+          .from("pdfs")
+          .remove([expectedPath]);
+        if (fileError) cleanupErrors.push(fileError.message);
+      }
+
+      const { error: chunkError } = await supabase
+        .from("source_chunks")
+        .delete()
+        .eq("source_id", source.id);
+      if (chunkError) cleanupErrors.push(chunkError.message);
+
+      const { data: analysisData, error: analysisLookupError } = await supabase
+        .from("module_analyses")
+        .select("id")
+        .eq("exam_id", exam.id)
+        .eq("module_name", source.name)
+        .maybeSingle();
+      if (analysisLookupError) {
+        cleanupErrors.push(analysisLookupError.message);
+      } else if (analysisData !== null) {
+        const analysisId =
+          isRecord(analysisData) && typeof analysisData.id === "string"
+            ? analysisData.id
+            : null;
+        if (!analysisId) {
+          cleanupErrors.push("The saved module analysis could not be read.");
+        } else {
+          const { error: analysisDeleteError } = await supabase
+            .from("module_analyses")
+            .delete()
+            .eq("id", analysisId);
+          if (analysisDeleteError) {
+            cleanupErrors.push(analysisDeleteError.message);
+          }
+        }
+      }
+
+      try {
+        await reloadPlannerModuleData();
+      } catch (reloadError) {
+        cleanupErrors.push(
+          getErrorMessage(reloadError, "Could not refresh the module list.")
+        );
+      }
+      setNotice("PDF removed. Rebuild your plan to apply this.");
+      if (cleanupErrors.length > 0) setError(cleanupErrors.join(" "));
+    } catch (removeError) {
+      setError(getErrorMessage(removeError, "Could not remove this PDF."));
+    } finally {
+      setRemovingPdfId(null);
+    }
+  }
 
   function toggleDayOff(day: number) {
     setSettings((current) => ({
@@ -799,11 +1406,11 @@ export default function PlannerPage() {
         setError("The subject was saved, but its details could not be read.");
         return;
       }
-      setExams((current) =>
-        [...current, savedExam].sort((a, b) =>
-          a.exam_date.localeCompare(b.exam_date)
-        )
+      const nextExams = [...examsRef.current, savedExam].sort((a, b) =>
+        a.exam_date.localeCompare(b.exam_date)
       );
+      examsRef.current = nextExams;
+      setExams(nextExams);
       setManualModules((current) => ({
         ...current,
         [savedExam.id]: [{ name: "", pages: "" }],
@@ -838,7 +1445,9 @@ export default function PlannerPage() {
         setError(deleteError.message);
         return;
       }
-      setExams((current) => current.filter((item) => item.id !== exam.id));
+      const nextExams = examsRef.current.filter((item) => item.id !== exam.id);
+      examsRef.current = nextExams;
+      setExams(nextExams);
       setTasks((current) => current.filter((task) => task.exam_id !== exam.id));
       setManualModules((current) => {
         const next = { ...current };
@@ -1788,13 +2397,112 @@ export default function PlannerPage() {
             </p>
           )}
           <div className="mt-4 space-y-4">
-            {modulesByExam.map(({ exam, resolution }) => (
-              <div
-                key={exam.id}
-                className="rounded-xl border border-[var(--border)] p-4"
-              >
-                <h3 className="font-semibold">{exam.subject}</h3>
-                {resolution.manual ? (
+            {modulesByExam.map(({ exam, resolution }) => {
+              const linkedChat = chats.find(
+                (chat) => chat.id === exam.chat_id
+              );
+              const linkedSources = Array.isArray(linkedChat?.sources)
+                ? linkedChat.sources
+                : [];
+              const hasUploadedPdfs = linkedSources.some(
+                (source) => isRecord(source) && source.type === "pdf"
+              );
+              const subjectJobs = pdfUploadJobs.filter(
+                (job) => job.examId === exam.id
+              );
+              const reservedSources = subjectJobs.filter(
+                (job) =>
+                  job.status === "queued" ||
+                  job.status === "running" ||
+                  job.status === "linking" ||
+                  (job.status === "error" && job.source !== null)
+              ).length;
+              const canUploadMore =
+                linkedSources.length + reservedSources < 20;
+
+              return (
+                <div
+                  key={exam.id}
+                  className="rounded-xl border border-[var(--border)] p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="font-semibold">{exam.subject}</h3>
+                    <label
+                      className={`cursor-pointer rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] ${
+                        !canUploadMore ||
+                        isRequestRunning ||
+                        removePdfConfirmation !== null
+                          ? "pointer-events-none opacity-60"
+                          : ""
+                      }`}
+                    >
+                      Upload module PDFs
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        multiple
+                        disabled={
+                          !canUploadMore ||
+                          isRequestRunning ||
+                          removePdfConfirmation !== null
+                        }
+                        aria-label={`Upload module PDFs for ${exam.subject}`}
+                        className="sr-only"
+                        onChange={(event) => {
+                          const files = Array.from(
+                            event.currentTarget.files ?? []
+                          );
+                          event.currentTarget.value = "";
+                          if (files.length > 0) queuePdfUploads(exam, files);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {subjectJobs.map((job) => (
+                    <div
+                      key={job.key}
+                      className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--bg)] p-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="break-all font-medium">{job.file.name}</p>
+                        <p className="mt-1 text-[var(--muted)]">
+                          {job.statusText}
+                        </p>
+                        {job.uploadWarning && (
+                          <p className="mt-1 text-amber-700">
+                            {job.uploadWarning}
+                          </p>
+                        )}
+                        {job.error && (
+                          <p role="alert" className="mt-1 text-[var(--bad)]">
+                            {job.error}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {job.status === "running" && (
+                          <button
+                            type="button"
+                            onClick={() => cancelPdfUpload(job)}
+                            className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 hover:bg-[var(--surface-hover)]"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        {job.status === "error" && (
+                          <button
+                            type="button"
+                            onClick={() => retryPdfUpload(job)}
+                            disabled={isRequestRunning}
+                            className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {resolution.manual && !hasUploadedPdfs ? (
                   <>
                     <p className="mt-1 text-xs text-[var(--muted)]">
                       {resolution.reason}
@@ -1857,10 +2565,25 @@ export default function PlannerPage() {
                     >
                       Add module
                     </button>
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      Or upload the real PDF so the AI can read it and judge the difficulty.
+                    </p>
                   </>
-                ) : (
-                  <div className="mt-3 space-y-3">
-                    {resolution.modules.map((module, index) => {
+                  ) : resolution.manual ? (
+                    <p className="mt-3 text-xs text-[var(--bad)]">
+                      This PDF does not have a usable page count. Remove it and upload it again.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {resolution.modules.map((module, index) => {
+                        const moduleSource = findPdfSourceByName(
+                          linkedChat,
+                          module.name
+                        );
+                        const confirmingRemoval =
+                          moduleSource !== null &&
+                          removePdfConfirmation?.examId === exam.id &&
+                          removePdfConfirmation.sourceId === moduleSource.id;
                       const key = getAnalysisKey(exam.id, module.name);
                       const analysis = analyses.find(
                         (item) =>
@@ -1894,7 +2617,51 @@ export default function PlannerPage() {
                                   ? "Scan again"
                                   : "Analyse with AI"}
                             </button>
+                            {moduleSource && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setRemovePdfConfirmation({
+                                        examId: exam.id,
+                                        sourceId: moduleSource.id,
+                                      })
+                                    }
+                                    disabled={isRequestRunning}
+                                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                                  >
+                                    Remove PDF
+                                  </button>
+                            )}
                           </div>
+                          {confirmingRemoval && moduleSource && (
+                            <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+                                  <p className="text-xs">
+                                    Remove this PDF from the plan? Its search data and AI scan are deleted.
+                                  </p>
+                                  <div className="mt-2 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setRemovePdfConfirmation(null)}
+                                      disabled={removingPdfId !== null}
+                                      className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void removePdfFromSubject(exam, moduleSource)
+                                      }
+                                      disabled={isRequestRunning}
+                                      className="rounded-lg bg-[var(--bad)] px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                                    >
+                                      {removingPdfId === moduleSource.id
+                                        ? "Removing..."
+                                        : "Remove PDF"}
+                                    </button>
+                                  </div>
+                            </div>
+                          )}
                           {analysisErrors[key] && (
                             <p
                               role="alert"
@@ -1995,11 +2762,12 @@ export default function PlannerPage() {
                           )}
                         </div>
                       );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -2118,6 +2886,26 @@ export default function PlannerPage() {
                   <div className="space-y-2">
                     {(tasksByDate.get(date) ?? []).map((task) => {
                       const taskKey = String(task.id);
+                      const taskExam = exams.find(
+                        (exam) => exam.id === task.exam_id
+                      );
+                      const taskChatId = taskExam?.chat_id ?? null;
+                      const taskModule = task.module?.trim() ?? "";
+                      const taskPages = parseTaskPages(task.pages);
+                      const taskAnalysis = analyses.find(
+                        (analysis) =>
+                          analysis.exam_id === task.exam_id &&
+                          analysis.chat_id === taskChatId &&
+                          analysis.module_name === taskModule
+                      );
+                      const taskTopic =
+                        taskAnalysis?.topics.find((topic) =>
+                          taskPages.pageStart !== null &&
+                          taskPages.pageEnd !== null
+                            ? topic.startPage <= taskPages.pageEnd &&
+                              topic.endPage >= taskPages.pageStart
+                            : false
+                        )?.title ?? null;
                       return (
                         <label
                           key={taskKey}
@@ -2151,6 +2939,25 @@ export default function PlannerPage() {
                               <span className="rounded-full bg-[var(--bg)] px-2 py-0.5">
                                 {task.kind}
                               </span>
+                              {taskChatId && taskModule ? (
+                                <Link
+                                  href={buildLearnUrl({
+                                    chatId: taskChatId,
+                                    moduleName: taskModule,
+                                    pageStart: taskPages.pageStart,
+                                    pageEnd: taskPages.pageEnd,
+                                    topic: taskTopic,
+                                    taskId: taskKey,
+                                  })}
+                                  className="rounded-lg border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--accent)] hover:bg-[var(--surface-hover)]"
+                                >
+                                  {task.done ? "Review" : "Learn"}
+                                </Link>
+                              ) : (
+                                <span className="text-xs text-[var(--muted)]">
+                                  Upload the PDF to enable Learn
+                                </span>
+                              )}
                             </span>
                           </span>
                         </label>

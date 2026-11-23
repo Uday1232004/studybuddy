@@ -11,6 +11,7 @@ import TopBar from "./components/TopBar";
 import Workspace, { type Source } from "./components/Workspace";
 import { readPdfPages } from "../lib/pdf-client";
 import { createClient as createBrowserClient } from "../lib/supabase/client";
+import { parseLearnParams } from "../lib/learn-link";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_FILE_ERROR = "This file is over 50 MB, the current storage limit.";
@@ -58,6 +59,9 @@ export default function Home() {
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabName>("Workspace");
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
+  const [learnBanner, setLearnBanner] = useState("");
+  const [learnError, setLearnError] = useState("");
+  const learnStartedRef = useRef(false);
 
   function replaceSources(nextSources: Source[]) {
     sourcesRef.current = nextSources;
@@ -282,6 +286,203 @@ export default function Home() {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  useEffect(() => {
+    if (learnStartedRef.current) return;
+    const params = parseLearnParams(new URLSearchParams(window.location.search));
+    if (!params) return;
+
+    learnStartedRef.current = true;
+    void (async () => {
+      setLearnError("");
+      setLearnBanner("");
+
+      const response = await fetch(
+        `/api/history/${encodeURIComponent(params.chatId)}`
+      );
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      if (!response.ok) {
+        const message =
+          isRecord(payload) && typeof payload.error === "string"
+            ? payload.error
+            : "Could not open this saved chat.";
+        setLearnError(message);
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+      if (
+        !isRecord(payload) ||
+        typeof payload.id !== "string" ||
+        !Array.isArray(payload.sources) ||
+        !Array.isArray(payload.messages)
+      ) {
+        setLearnError("Could not open this saved chat.");
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+
+      const restoredSources: Source[] = payload.sources.flatMap((source) => {
+        if (
+          !isRecord(source) ||
+          typeof source.id !== "string" ||
+          !UUID_PATTERN.test(source.id) ||
+          typeof source.name !== "string" ||
+          (source.type !== "pdf" && source.type !== "text") ||
+          typeof source.enabled !== "boolean"
+        ) {
+          return [];
+        }
+        return [
+          {
+            id: source.id,
+            type: source.type,
+            name: source.name,
+            preview: "",
+            enabled: source.enabled,
+            filePath:
+              typeof source.filePath === "string" &&
+              source.filePath.length <= 200 &&
+              FILE_PATH_PATTERN.test(source.filePath) &&
+              source.filePath.endsWith(`/${source.id}.pdf`)
+                ? source.filePath
+                : null,
+            fileSize:
+              typeof source.fileSize === "number" &&
+              Number.isFinite(source.fileSize) &&
+              source.fileSize >= 0
+                ? source.fileSize
+                : 0,
+            ...(typeof source.pages === "number"
+              ? { pages: source.pages }
+              : {}),
+          },
+        ];
+      });
+      chatSessionGenerationRef.current += 1;
+      cancelSourceWork();
+      const restoredMessages: ChatMessage[] = payload.messages.flatMap(
+        (message): ChatMessage[] =>
+        isRecord(message) &&
+        (message.role === "user" || message.role === "assistant") &&
+        typeof message.content === "string"
+          ? [{ role: message.role, content: message.content }]
+          : []
+      );
+      currentChatIdRef.current = payload.id;
+      setCurrentChatId(payload.id);
+      chatMessagesRef.current = restoredMessages;
+      restoredSourcesRef.current = restoredSources;
+      for (const source of restoredSources) {
+        if (source.filePath) {
+          sourceFilePathsRef.current.set(source.id, source.filePath);
+        }
+      }
+      setRestoreSession((current) => ({
+        key: current.key + 1,
+        messages: restoredMessages,
+      }));
+      setActiveHistoryId(payload.id);
+      replaceSources(restoredSources);
+      setSourceMessage("");
+      setActiveTab("Workspace");
+
+      const matchingSource = sourcesRef.current.find(
+        (source) =>
+          source.type === "pdf" && source.name === params.moduleName
+      );
+      if (!matchingSource) {
+        setLearnError(
+          `Could not find the PDF "${params.moduleName}" in this saved chat.`
+        );
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+
+      replaceSources(
+        sourcesRef.current.map((source) => ({
+          ...source,
+          enabled: source.id === matchingSource.id,
+        }))
+      );
+
+      const range =
+        params.pageStart !== null && params.pageEnd !== null
+          ? params.pageStart === params.pageEnd
+            ? `page ${params.pageStart}`
+            : `pages ${params.pageStart}-${params.pageEnd}`
+          : "the assigned pages";
+      const topic = params.topic ?? "this topic";
+      const firstMessage: ChatMessage = {
+        role: "user",
+        content: `Teach me ${topic} from ${params.moduleName}, ${range}, in teacher mode: explain simply first, then give the exact exam answer format.`,
+      };
+      const bannerDetail =
+        params.topic ??
+        (params.pageStart !== null && params.pageEnd !== null
+          ? params.pageStart === params.pageEnd
+            ? `page ${params.pageStart}`
+            : `pages ${params.pageStart}-${params.pageEnd}`
+          : "assigned pages");
+
+      setLearnBanner(`Studying: ${params.moduleName} - ${bannerDetail}`);
+      setActiveHistoryId(params.chatId);
+      currentChatIdRef.current = params.chatId;
+      setCurrentChatId(params.chatId);
+      setRestoreSession((current) => ({
+        key: current.key + 1,
+        messages: [firstMessage],
+      }));
+      chatMessagesRef.current = [firstMessage];
+      window.history.replaceState({}, "", window.location.pathname);
+
+      try {
+        const chatResponse = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceIds: [matchingSource.id],
+            messages: [firstMessage],
+          }),
+        });
+        let chatPayload: unknown = null;
+        try {
+          chatPayload = await chatResponse.json();
+        } catch {
+          chatPayload = null;
+        }
+        if (!chatResponse.ok) {
+          const message =
+            isRecord(chatPayload) && typeof chatPayload.error === "string"
+              ? chatPayload.error
+              : "The teacher could not answer. Try again.";
+          setLearnError(message);
+          return;
+        }
+        if (!isRecord(chatPayload) || typeof chatPayload.reply !== "string") {
+          setLearnError("The teacher could not answer. Try again.");
+          return;
+        }
+
+        const completedMessages: ChatMessage[] = [
+          firstMessage,
+          { role: "assistant", content: chatPayload.reply },
+        ];
+        chatMessagesRef.current = completedMessages;
+        setRestoreSession((current) => ({
+          key: current.key + 1,
+          messages: completedMessages,
+        }));
+        handleAssistantReply(completedMessages);
+      } catch {
+        setLearnError("The teacher could not answer. Try again.");
+      }
+    })();
+  }, [handleAssistantReply]);
 
   function handleNewNotes() {
     chatSessionGenerationRef.current += 1;
@@ -829,6 +1030,27 @@ export default function Home() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <TopBar />
+      {(learnBanner || learnError) && (
+        <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            {learnBanner ? (
+              <p className="min-w-0 truncate text-sm font-medium">
+                {learnBanner}
+              </p>
+            ) : (
+              <p role="alert" className="min-w-0 text-sm text-[var(--bad)]">
+                {learnError}
+              </p>
+            )}
+            <a
+              href="/planner"
+              className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+            >
+              Back to plan
+            </a>
+          </div>
+        </div>
+      )}
       <MobileTabs activeTab={activeTab} onSelect={setActiveTab} />
       <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside
