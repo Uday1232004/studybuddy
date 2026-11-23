@@ -12,6 +12,7 @@ import {
   type PlannerExam,
   type PlannerModule,
 } from "@/lib/planner";
+import type { AnalysisTopic } from "@/lib/analysis";
 import { createClient } from "@/lib/supabase/client";
 
 type Exam = {
@@ -50,6 +51,18 @@ type PlanTask = {
 
 type PlanTaskInput = Omit<PlanTask, "id">;
 
+type ModuleAnalysisRow = {
+  id: string;
+  exam_id: string;
+  chat_id: string;
+  module_name: string;
+  pages: number;
+  overall_difficulty: number;
+  summary: string;
+  topics: AnalysisTopic[];
+  model: string | null;
+};
+
 type ManualModuleDraft = {
   name: string;
   pages: string;
@@ -72,6 +85,8 @@ type ModuleResolution = {
 
 const TASK_COLUMNS =
   "id, exam_id, module, title, kind, pages, task_date, minutes, done, done_at, position";
+const ANALYSIS_COLUMNS =
+  "id, exam_id, chat_id, module_name, pages, overall_difficulty, summary, topics, model";
 const WEEKDAYS = [
   { label: "Sun", value: 0 },
   { label: "Mon", value: 1 },
@@ -172,6 +187,57 @@ function parseTask(value: unknown): PlanTask | null {
   };
 }
 
+function parseAnalysisTopic(value: unknown): AnalysisTopic | null {
+  if (
+    !isRecord(value) ||
+    typeof value.title !== "string" ||
+    typeof value.startPage !== "number" ||
+    typeof value.endPage !== "number" ||
+    typeof value.difficulty !== "number" ||
+    typeof value.priority !== "number" ||
+    typeof value.reason !== "string"
+  ) {
+    return null;
+  }
+  return {
+    title: value.title,
+    startPage: value.startPage,
+    endPage: value.endPage,
+    difficulty: value.difficulty,
+    priority: value.priority,
+    reason: value.reason,
+  };
+}
+
+function parseModuleAnalysis(value: unknown): ModuleAnalysisRow | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.exam_id !== "string" ||
+    typeof value.chat_id !== "string" ||
+    typeof value.module_name !== "string" ||
+    typeof value.pages !== "number" ||
+    typeof value.overall_difficulty !== "number" ||
+    typeof value.summary !== "string" ||
+    !(typeof value.model === "string" || value.model === null)
+  ) {
+    return null;
+  }
+  const parsedTopics = parseRows(value.topics, parseAnalysisTopic);
+  if (parsedTopics.invalid || parsedTopics.rows.length === 0) return null;
+  return {
+    id: value.id,
+    exam_id: value.exam_id,
+    chat_id: value.chat_id,
+    module_name: value.module_name,
+    pages: value.pages,
+    overall_difficulty: value.overall_difficulty,
+    summary: value.summary,
+    topics: parsedTopics.rows,
+    model: value.model,
+  };
+}
+
 function parseSettings(value: unknown): PlannerSettingsForm | null {
   if (!isRecord(value)) return null;
   const hours =
@@ -198,6 +264,10 @@ function getLocalDateString(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getAnalysisKey(examId: string, moduleName: string): string {
+  return `${examId}::${moduleName}`;
 }
 
 function subscribeToLocalDay(callback: () => void) {
@@ -315,6 +385,7 @@ export default function PlannerPage() {
   });
   const [exams, setExams] = useState<Exam[]>([]);
   const [chats, setChats] = useState<SavedChat[]>([]);
+  const [analyses, setAnalyses] = useState<ModuleAnalysisRow[]>([]);
   const [tasks, setTasks] = useState<PlanTask[]>([]);
   const [manualModules, setManualModules] = useState<
     Record<string, ManualModuleDraft[]>
@@ -337,6 +408,21 @@ export default function PlannerPage() {
   const [updatingTaskIds, setUpdatingTaskIds] = useState<Set<string>>(
     new Set()
   );
+  const [scanningModuleKeys, setScanningModuleKeys] = useState<Set<string>>(
+    new Set()
+  );
+  const [savingAnalysisIds, setSavingAnalysisIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [dirtyAnalysisIds, setDirtyAnalysisIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [analysisErrors, setAnalysisErrors] = useState<Record<string, string>>(
+    {}
+  );
+  const [analysisNotices, setAnalysisNotices] = useState<
+    Record<string, string>
+  >({});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [summaries, setSummaries] = useState<
     { subject: string; plannedMinutes: number; unscheduledMinutes: number }[]
@@ -350,7 +436,13 @@ export default function PlannerPage() {
       setError("");
       const supabase = createClient();
       try {
-        const [settingsResult, examsResult, chatsResult, tasksResult] =
+        const [
+          settingsResult,
+          examsResult,
+          chatsResult,
+          tasksResult,
+          analysesResult,
+        ] =
           await Promise.all([
             supabase
               .from("planner_settings")
@@ -369,6 +461,9 @@ export default function PlannerPage() {
               .select(TASK_COLUMNS)
               .order("task_date", { ascending: true })
               .order("position", { ascending: true }),
+            supabase
+              .from("module_analyses")
+              .select(ANALYSIS_COLUMNS),
           ]);
 
         if (!active) return;
@@ -378,6 +473,7 @@ export default function PlannerPage() {
           examsResult.error?.message,
           chatsResult.error?.message,
           tasksResult.error?.message,
+          analysesResult.error?.message,
         ].filter((message): message is string => Boolean(message));
 
         const rawExams: unknown = examsResult.data;
@@ -386,6 +482,8 @@ export default function PlannerPage() {
         const parsedChats = parseRows(rawChats, parseChat);
         const rawTasks: unknown = tasksResult.data;
         const parsedTasks = parseRows(rawTasks, parseTask);
+        const rawAnalyses: unknown = analysesResult.data;
+        const parsedAnalyses = parseRows(rawAnalyses, parseModuleAnalysis);
 
         if (!examsResult.error) {
           setExams(
@@ -407,6 +505,12 @@ export default function PlannerPage() {
           setTasks(parsedTasks.rows);
           if (parsedTasks.invalid) {
             callErrors.push("Some saved plan tasks could not be read.");
+          }
+        }
+        if (!analysesResult.error) {
+          setAnalyses(parsedAnalyses.rows);
+          if (parsedAnalyses.invalid) {
+            callErrors.push("Some saved module analyses could not be read.");
           }
         }
         if (!settingsResult.error && settingsResult.data !== null) {
@@ -620,6 +724,165 @@ export default function PlannerPage() {
     });
   }
 
+  function changeAnalysisDifficulty(
+    analysisId: string,
+    topicIndex: number,
+    difficulty: number
+  ) {
+    setAnalyses((current) =>
+      current.map((analysis) =>
+        analysis.id === analysisId
+          ? {
+              ...analysis,
+              topics: analysis.topics.map((topic, index) =>
+                index === topicIndex ? { ...topic, difficulty } : topic
+              ),
+            }
+          : analysis
+      )
+    );
+    setDirtyAnalysisIds((current) => new Set(current).add(analysisId));
+  }
+
+  async function scanModule(examId: string, module: PlannerModule) {
+    const key = getAnalysisKey(examId, module.name);
+    setAnalysisErrors((current) => ({ ...current, [key]: "" }));
+    setAnalysisNotices((current) => ({ ...current, [key]: "" }));
+    setScanningModuleKeys((current) => new Set(current).add(key));
+    try {
+      const response = await fetch("/api/planner/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ examId, sourceName: module.name }),
+      });
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        setAnalysisErrors((current) => ({
+          ...current,
+          [key]: "The scan returned an unreadable response. Try again.",
+        }));
+        return;
+      }
+      if (!response.ok) {
+        const message =
+          isRecord(payload) && typeof payload.error === "string"
+            ? payload.error
+            : "Could not scan this PDF. Try again.";
+        setAnalysisErrors((current) => ({ ...current, [key]: message }));
+        return;
+      }
+      if (!isRecord(payload) || !isRecord(payload.analysis)) {
+        setAnalysisErrors((current) => ({
+          ...current,
+          [key]: "The scan returned an unexpected response. Try again.",
+        }));
+        return;
+      }
+
+      const { data, error: loadError } = await createClient()
+        .from("module_analyses")
+        .select(ANALYSIS_COLUMNS)
+        .eq("exam_id", examId)
+        .eq("module_name", module.name)
+        .maybeSingle();
+      if (loadError) {
+        setAnalysisErrors((current) => ({
+          ...current,
+          [key]: loadError.message,
+        }));
+        return;
+      }
+      const savedAnalysis = parseModuleAnalysis(data as unknown);
+      if (!savedAnalysis) {
+        setAnalysisErrors((current) => ({
+          ...current,
+          [key]: "The analysis was saved, but could not be loaded.",
+        }));
+        return;
+      }
+
+      setAnalyses((current) => [
+        ...current.filter(
+          (analysis) =>
+            analysis.id !== savedAnalysis.id &&
+            !(
+              analysis.exam_id === examId &&
+              analysis.module_name === module.name
+            )
+        ),
+        savedAnalysis,
+      ]);
+      setDirtyAnalysisIds((current) => {
+        const next = new Set(current);
+        next.delete(savedAnalysis.id);
+        return next;
+      });
+      setAnalysisNotices((current) => ({
+        ...current,
+        [key]: "Analysis saved.",
+      }));
+    } catch (scanError) {
+      setAnalysisErrors((current) => ({
+        ...current,
+        [key]:
+          scanError instanceof Error
+            ? scanError.message
+            : "Could not scan this PDF. Try again.",
+      }));
+    } finally {
+      setScanningModuleKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  async function saveAnalysisChanges(analysis: ModuleAnalysisRow) {
+    const key = getAnalysisKey(analysis.exam_id, analysis.module_name);
+    setAnalysisErrors((current) => ({ ...current, [key]: "" }));
+    setAnalysisNotices((current) => ({ ...current, [key]: "" }));
+    setSavingAnalysisIds((current) => new Set(current).add(analysis.id));
+    try {
+      const { error: saveError } = await createClient()
+        .from("module_analyses")
+        .update({ topics: analysis.topics })
+        .eq("id", analysis.id);
+      if (saveError) {
+        setAnalysisErrors((current) => ({
+          ...current,
+          [key]: saveError.message,
+        }));
+        return;
+      }
+      setDirtyAnalysisIds((current) => {
+        const next = new Set(current);
+        next.delete(analysis.id);
+        return next;
+      });
+      setAnalysisNotices((current) => ({
+        ...current,
+        [key]: "Your topic changes are saved.",
+      }));
+    } catch (saveError) {
+      setAnalysisErrors((current) => ({
+        ...current,
+        [key]:
+          saveError instanceof Error
+            ? saveError.message
+            : "Could not save your topic changes.",
+      }));
+    } finally {
+      setSavingAnalysisIds((current) => {
+        const next = new Set(current);
+        next.delete(analysis.id);
+        return next;
+      });
+    }
+  }
+
   async function buildAndSavePlan() {
     setError("");
     setNotice("");
@@ -651,7 +914,26 @@ export default function PlannerPage() {
         examDate: exam.exam_date,
         credits: exam.credits,
         difficulty: exam.difficulty,
-        modules: resolution.modules,
+        modules: resolution.modules.map((module) => {
+          if (resolution.manual) return module;
+          const analysis = analyses.find(
+            (item) =>
+              item.exam_id === exam.id &&
+              item.chat_id === exam.chat_id &&
+              item.module_name === module.name
+          );
+          if (!analysis || analysis.pages !== module.pages) return module;
+          return {
+            ...module,
+            topics: analysis.topics.map((topic) => ({
+              title: topic.title,
+              startPage: topic.startPage,
+              endPage: topic.endPage,
+              difficulty: topic.difficulty,
+              priority: topic.priority,
+            })),
+          };
+        }),
       });
     }
 
@@ -1179,13 +1461,144 @@ export default function PlannerPage() {
                     </button>
                   </>
                 ) : (
-                  <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
-                    {resolution.modules.map((module, index) => (
-                      <li key={`${module.name}-${index}`}>
-                        {module.name} — {module.pages} pages
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="mt-3 space-y-3">
+                    {resolution.modules.map((module, index) => {
+                      const key = getAnalysisKey(exam.id, module.name);
+                      const analysis = analyses.find(
+                        (item) =>
+                          item.exam_id === exam.id &&
+                          item.module_name === module.name
+                      );
+                      const outOfDate =
+                        analysis !== undefined &&
+                        (analysis.pages !== module.pages ||
+                          analysis.chat_id !== exam.chat_id);
+                      const scanning = scanningModuleKeys.has(key);
+
+                      return (
+                        <div
+                          key={`${module.name}-${index}`}
+                          className="rounded-lg border border-[var(--border)] p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm text-[var(--muted)]">
+                              {module.name} — {module.pages} pages
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void scanModule(exam.id, module)}
+                              disabled={scanning}
+                              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                            >
+                              {scanning
+                                ? `Reading ${module.pages} pages...`
+                                : analysis
+                                  ? "Scan again"
+                                  : "Analyse with AI"}
+                            </button>
+                          </div>
+                          {analysisErrors[key] && (
+                            <p
+                              role="alert"
+                              className="mt-2 text-xs text-[var(--bad)]"
+                            >
+                              {analysisErrors[key]}
+                            </p>
+                          )}
+                          {analysisNotices[key] && (
+                            <p className="mt-2 text-xs text-[var(--muted)]">
+                              {analysisNotices[key]}
+                            </p>
+                          )}
+                          {analysis && (
+                            <div className="mt-3 rounded-lg bg-[var(--bg)] p-3">
+                              {outOfDate && (
+                                <p className="mb-2 text-xs font-semibold text-amber-700">
+                                  Out of date, scan again.
+                                </p>
+                              )}
+                              <p className="text-sm">{analysis.summary}</p>
+                              <p className="mt-1 text-xs text-[var(--muted)]">
+                                AI difficulty guess: {analysis.overall_difficulty}/5
+                              </p>
+                              <div className="mt-3 overflow-x-auto">
+                                <table className="w-full min-w-[560px] text-left text-xs">
+                                  <thead className="text-[var(--muted)]">
+                                    <tr>
+                                      <th className="py-2 pr-3">#</th>
+                                      <th className="py-2 pr-3">Topic</th>
+                                      <th className="py-2 pr-3">Pages</th>
+                                      <th className="py-2 pr-3">Difficulty</th>
+                                      <th className="py-2">Why</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {analysis.topics.map((topic, topicIndex) => (
+                                      <tr
+                                        key={`${topic.priority}-${topicIndex}`}
+                                        className="border-t border-[var(--border)] align-top"
+                                      >
+                                        <td className="py-2 pr-3">
+                                          {topic.priority}
+                                        </td>
+                                        <td className="py-2 pr-3">
+                                          {topic.title}
+                                        </td>
+                                        <td className="py-2 pr-3">
+                                          {topic.startPage === topic.endPage
+                                            ? `p. ${topic.startPage}`
+                                            : `pp. ${topic.startPage}-${topic.endPage}`}
+                                        </td>
+                                        <td className="py-2 pr-3">
+                                          <select
+                                            aria-label={`Difficulty for ${topic.title}`}
+                                            value={topic.difficulty}
+                                            onChange={(event) =>
+                                              changeAnalysisDifficulty(
+                                                analysis.id,
+                                                topicIndex,
+                                                Number(event.target.value)
+                                              )
+                                            }
+                                            className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                                          >
+                                            {[1, 2, 3, 4, 5].map((level) => (
+                                              <option key={level} value={level}>
+                                                {level}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="py-2">{topic.reason}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p className="mt-3 text-xs text-[var(--muted)]">
+                                AI guesses can be wrong. Change any difficulty and the plan follows your number.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void saveAnalysisChanges(analysis)
+                                }
+                                disabled={
+                                  !dirtyAnalysisIds.has(analysis.id) ||
+                                  savingAnalysisIds.has(analysis.id)
+                                }
+                                className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                              >
+                                {savingAnalysisIds.has(analysis.id)
+                                  ? "Saving..."
+                                  : "Save my changes"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             ))}
