@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import {
+  useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
@@ -37,6 +39,7 @@ type SavedChat = {
 
 type PlanTask = {
   id: string | number;
+  plan_id: string | null;
   exam_id: string;
   module: string | null;
   title: string;
@@ -49,7 +52,31 @@ type PlanTask = {
   position: number;
 };
 
-type PlanTaskInput = Omit<PlanTask, "id">;
+type SavedPlan = {
+  id: string;
+  title: string;
+  status: "active" | "archived";
+  start_date: string;
+  created_at: string;
+};
+
+type PlanTaskProgress = {
+  id: string | number;
+  plan_id: string;
+  done: boolean;
+};
+
+type NewPlanTask = {
+  plan_id: string;
+  exam_id: string;
+  module: string | null;
+  title: string;
+  kind: "learn" | "practice" | "revise";
+  pages: string | null;
+  task_date: string;
+  minutes: number;
+  position: number;
+};
 
 type ModuleAnalysisRow = {
   id: string;
@@ -84,7 +111,8 @@ type ModuleResolution = {
 };
 
 const TASK_COLUMNS =
-  "id, exam_id, module, title, kind, pages, task_date, minutes, done, done_at, position";
+  "id, plan_id, exam_id, module, title, kind, pages, task_date, minutes, done, done_at, position";
+const PLAN_COLUMNS = "id, title, status, start_date, created_at";
 const ANALYSIS_COLUMNS =
   "id, exam_id, chat_id, module_name, pages, overall_difficulty, summary, topics, model";
 const WEEKDAYS = [
@@ -157,6 +185,7 @@ function parseTask(value: unknown): PlanTask | null {
   if (
     !isRecord(value) ||
     !(typeof value.id === "string" || typeof value.id === "number") ||
+    !(typeof value.plan_id === "string" || value.plan_id === null) ||
     typeof value.exam_id !== "string" ||
     !(typeof value.module === "string" || value.module === null) ||
     typeof value.title !== "string" ||
@@ -174,6 +203,7 @@ function parseTask(value: unknown): PlanTask | null {
   }
   return {
     id: value.id,
+    plan_id: value.plan_id,
     exam_id: value.exam_id,
     module: value.module,
     title: value.title,
@@ -185,6 +215,38 @@ function parseTask(value: unknown): PlanTask | null {
     done_at: value.done_at,
     position: value.position,
   };
+}
+
+function parsePlan(value: unknown): SavedPlan | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    (value.status !== "active" && value.status !== "archived") ||
+    typeof value.start_date !== "string" ||
+    typeof value.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    title: value.title,
+    status: value.status,
+    start_date: value.start_date.slice(0, 10),
+    created_at: value.created_at,
+  };
+}
+
+function parsePlanTaskProgress(value: unknown): PlanTaskProgress | null {
+  if (
+    !isRecord(value) ||
+    !(typeof value.id === "string" || typeof value.id === "number") ||
+    typeof value.plan_id !== "string" ||
+    typeof value.done !== "boolean"
+  ) {
+    return null;
+  }
+  return { id: value.id, plan_id: value.plan_id, done: value.done };
 }
 
 function parseAnalysisTopic(value: unknown): AnalysisTopic | null {
@@ -264,6 +326,32 @@ function getLocalDateString(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getDefaultPlanTitle(date: Date): string {
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `Plan from ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function formatCreatedDate(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 function getAnalysisKey(examId: string, moduleName: string): string {
@@ -360,21 +448,6 @@ function resolveModules(
   };
 }
 
-function toTaskInput(task: PlanTask): PlanTaskInput {
-  return {
-    exam_id: task.exam_id,
-    module: task.module,
-    title: task.title,
-    kind: task.kind,
-    pages: task.pages,
-    task_date: task.task_date,
-    minutes: task.minutes,
-    done: task.done,
-    done_at: task.done_at,
-    position: task.position,
-  };
-}
-
 export default function PlannerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -387,6 +460,15 @@ export default function PlannerPage() {
   const [chats, setChats] = useState<SavedChat[]>([]);
   const [analyses, setAnalyses] = useState<ModuleAnalysisRow[]>([]);
   const [tasks, setTasks] = useState<PlanTask[]>([]);
+  const [legacyTasks, setLegacyTasks] = useState<PlanTask[]>([]);
+  const [plans, setPlans] = useState<SavedPlan[]>([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [activePlan, setActivePlan] = useState<SavedPlan | null>(null);
+  const [planProgress, setPlanProgress] = useState<
+    Record<string, { done: number; total: number }>
+  >({});
+  const [viewPlanId, setViewPlanId] = useState<string | null>(null);
+  const [viewPlanTasks, setViewPlanTasks] = useState<PlanTask[]>([]);
   const [manualModules, setManualModules] = useState<
     Record<string, ManualModuleDraft[]>
   >({});
@@ -397,6 +479,7 @@ export default function PlannerPage() {
     difficulty: "3",
     chatId: "",
   });
+  const [planName, setPlanName] = useState("");
   const today = useSyncExternalStore(
     subscribeToLocalDay,
     getLocalDaySnapshot,
@@ -405,6 +488,16 @@ export default function PlannerPage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [addingExam, setAddingExam] = useState(false);
   const [buildingPlan, setBuildingPlan] = useState(false);
+  const [planActionBusy, setPlanActionBusy] = useState<string | null>(null);
+  const [deleteConfirmPlanId, setDeleteConfirmPlanId] = useState<string | null>(
+    null
+  );
+  const [renamingPlanId, setRenamingPlanId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const renameCancelledRef = useRef(false);
+  const [deletingExamIds, setDeletingExamIds] = useState<Set<string>>(
+    new Set()
+  );
   const [updatingTaskIds, setUpdatingTaskIds] = useState<Set<string>>(
     new Set()
   );
@@ -428,6 +521,94 @@ export default function PlannerPage() {
     { subject: string; plannedMinutes: number; unscheduledMinutes: number }[]
   >([]);
 
+  const isRequestRunning =
+    savingSettings ||
+    addingExam ||
+    buildingPlan ||
+    planActionBusy !== null ||
+    deletingExamIds.size > 0 ||
+    updatingTaskIds.size > 0 ||
+    scanningModuleKeys.size > 0 ||
+    savingAnalysisIds.size > 0;
+
+  const reloadPlansAndTasks = useCallback(async () => {
+    const supabase = createClient();
+    const errors: string[] = [];
+    const { data: planData, error: planError } = await supabase
+      .from("plans")
+      .select(PLAN_COLUMNS)
+      .order("created_at", { ascending: false });
+    if (planError) {
+      setPlansLoaded(false);
+      setError(planError.message);
+      return false;
+    }
+
+    const parsedPlans = parseRows(planData as unknown, parsePlan);
+    if (parsedPlans.invalid) errors.push("Some saved plans could not be read.");
+    const loadedPlans = parsedPlans.rows;
+    const loadedActivePlan =
+      loadedPlans.find((plan) => plan.status === "active") ?? null;
+    setPlans(loadedPlans);
+    setPlansLoaded(!parsedPlans.invalid);
+    setActivePlan(loadedActivePlan);
+
+    const { data: progressData, error: progressError } = await supabase
+      .from("plan_tasks")
+      .select("id, plan_id, done")
+      .not("plan_id", "is", null);
+    if (progressError) {
+      errors.push(progressError.message);
+    } else {
+      const progressRows = parseRows(
+        progressData as unknown,
+        parsePlanTaskProgress
+      );
+      if (progressRows.invalid) {
+        errors.push("Some plan progress could not be read.");
+      }
+      const nextProgress: Record<string, { done: number; total: number }> = {};
+      for (const task of progressRows.rows) {
+        const progress = nextProgress[task.plan_id] ?? { done: 0, total: 0 };
+        progress.total++;
+        if (task.done) progress.done++;
+        nextProgress[task.plan_id] = progress;
+      }
+      setPlanProgress(nextProgress);
+    }
+
+    const taskQuery = loadedActivePlan
+      ? supabase
+          .from("plan_tasks")
+          .select(TASK_COLUMNS)
+          .eq("plan_id", loadedActivePlan.id)
+          .order("task_date", { ascending: true })
+          .order("position", { ascending: true })
+      : supabase
+          .from("plan_tasks")
+          .select(TASK_COLUMNS)
+          .is("plan_id", null)
+          .order("task_date", { ascending: true })
+          .order("position", { ascending: true });
+    const { data: taskData, error: taskError } = await taskQuery;
+    if (taskError) {
+      errors.push(taskError.message);
+    } else {
+      const parsedTasks = parseRows(taskData as unknown, parseTask);
+      if (parsedTasks.invalid) errors.push("Some plan tasks could not be read.");
+      if (loadedActivePlan) {
+        setTasks(parsedTasks.rows);
+        setLegacyTasks([]);
+      } else {
+        setTasks([]);
+        setLegacyTasks(parsedTasks.rows);
+      }
+    }
+
+    if (errors.length > 0) setError(errors.join(" "));
+    return errors.length === 0;
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -436,13 +617,7 @@ export default function PlannerPage() {
       setError("");
       const supabase = createClient();
       try {
-        const [
-          settingsResult,
-          examsResult,
-          chatsResult,
-          tasksResult,
-          analysesResult,
-        ] =
+        const [settingsResult, examsResult, chatsResult, analysesResult] =
           await Promise.all([
             supabase
               .from("planner_settings")
@@ -457,11 +632,6 @@ export default function PlannerPage() {
               .select("id, title, sources")
               .order("title", { ascending: true }),
             supabase
-              .from("plan_tasks")
-              .select(TASK_COLUMNS)
-              .order("task_date", { ascending: true })
-              .order("position", { ascending: true }),
-            supabase
               .from("module_analyses")
               .select(ANALYSIS_COLUMNS),
           ]);
@@ -472,7 +642,6 @@ export default function PlannerPage() {
           settingsResult.error?.message,
           examsResult.error?.message,
           chatsResult.error?.message,
-          tasksResult.error?.message,
           analysesResult.error?.message,
         ].filter((message): message is string => Boolean(message));
 
@@ -480,8 +649,6 @@ export default function PlannerPage() {
         const parsedExams = parseRows(rawExams, parseExam);
         const rawChats: unknown = chatsResult.data;
         const parsedChats = parseRows(rawChats, parseChat);
-        const rawTasks: unknown = tasksResult.data;
-        const parsedTasks = parseRows(rawTasks, parseTask);
         const rawAnalyses: unknown = analysesResult.data;
         const parsedAnalyses = parseRows(rawAnalyses, parseModuleAnalysis);
 
@@ -499,12 +666,6 @@ export default function PlannerPage() {
           setChats(parsedChats.rows);
           if (parsedChats.invalid) {
             callErrors.push("Some saved chats could not be read.");
-          }
-        }
-        if (!tasksResult.error) {
-          setTasks(parsedTasks.rows);
-          if (parsedTasks.invalid) {
-            callErrors.push("Some saved plan tasks could not be read.");
           }
         }
         if (!analysesResult.error) {
@@ -528,6 +689,7 @@ export default function PlannerPage() {
           return next;
         });
         if (callErrors.length > 0) setError(callErrors.join(" "));
+        if (active) await reloadPlansAndTasks();
       } catch (loadError) {
         if (active) {
           setError(
@@ -545,7 +707,7 @@ export default function PlannerPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadPlansAndTasks]);
 
   function toggleDayOff(day: number) {
     setSettings((current) => ({
@@ -662,9 +824,11 @@ export default function PlannerPage() {
   }
 
   async function deleteExam(exam: Exam) {
+    if (isRequestRunning) return;
     if (!window.confirm(`Delete ${exam.subject}?`)) return;
     setError("");
     setNotice("");
+    setDeletingExamIds((current) => new Set(current).add(exam.id));
     try {
       const { error: deleteError } = await createClient()
         .from("exams")
@@ -684,6 +848,12 @@ export default function PlannerPage() {
       setNotice("Subject deleted.");
     } catch (deleteError) {
       setError(getErrorMessage(deleteError, "Could not delete this subject."));
+    } finally {
+      setDeletingExamIds((current) => {
+        const next = new Set(current);
+        next.delete(exam.id);
+        return next;
+      });
     }
   }
 
@@ -883,13 +1053,172 @@ export default function PlannerPage() {
     }
   }
 
+  async function viewSavedPlan(plan: SavedPlan) {
+    if (isRequestRunning) return;
+    setError("");
+    setPlanActionBusy(`view:${plan.id}`);
+    try {
+      const { data, error: taskError } = await createClient()
+        .from("plan_tasks")
+        .select(TASK_COLUMNS)
+        .eq("plan_id", plan.id)
+        .order("task_date", { ascending: true })
+        .order("position", { ascending: true });
+      if (taskError) {
+        setError(taskError.message);
+        return;
+      }
+      const parsed = parseRows(data as unknown, parseTask);
+      if (parsed.invalid) {
+        setError("Some tasks in this plan could not be read.");
+        return;
+      }
+      setViewPlanTasks(parsed.rows);
+      setViewPlanId(plan.id);
+    } catch (viewError) {
+      setError(getErrorMessage(viewError, "Could not open this plan."));
+    } finally {
+      setPlanActionBusy(null);
+    }
+  }
+
+  async function makePlanActive(plan: SavedPlan) {
+    if (isRequestRunning) return;
+    setError("");
+    setNotice("");
+    setPlanActionBusy(`activate:${plan.id}`);
+    try {
+      const supabase = createClient();
+      const { error: archiveError } = await supabase
+        .from("plans")
+        .update({ status: "archived" })
+        .eq("status", "active")
+        .neq("id", plan.id);
+      if (archiveError) {
+        await reloadPlansAndTasks();
+        setError(archiveError.message);
+        return;
+      }
+
+      const { error: activateError } = await supabase
+        .from("plans")
+        .update({ status: "active" })
+        .eq("id", plan.id);
+      if (activateError) {
+        await reloadPlansAndTasks();
+        setError(activateError.message);
+        return;
+      }
+
+      setViewPlanId(null);
+      setViewPlanTasks([]);
+      await reloadPlansAndTasks();
+      setNotice("This plan is now active.");
+    } catch (activationError) {
+      await reloadPlansAndTasks();
+      setError(
+        getErrorMessage(activationError, "Could not make this plan active.")
+      );
+    } finally {
+      setPlanActionBusy(null);
+    }
+  }
+
+  function startPlanRename(plan: SavedPlan) {
+    renameCancelledRef.current = false;
+    setError("");
+    setRenamingPlanId(plan.id);
+    setRenameDraft(plan.title);
+  }
+
+  function cancelPlanRename() {
+    renameCancelledRef.current = true;
+    setRenamingPlanId(null);
+    setRenameDraft("");
+  }
+
+  async function savePlanRename(plan: SavedPlan, value: string) {
+    const title = value.trim();
+    if (title.length < 1 || title.length > 80) {
+      setError("Plan names must be between 1 and 80 characters.");
+      return;
+    }
+    if (planActionBusy !== null) return;
+    if (title === plan.title) {
+      setRenamingPlanId(null);
+      setRenameDraft("");
+      return;
+    }
+
+    setError("");
+    setPlanActionBusy(`rename:${plan.id}`);
+    try {
+      const { error: renameError } = await createClient()
+        .from("plans")
+        .update({ title })
+        .eq("id", plan.id);
+      if (renameError) {
+        setError(renameError.message);
+        return;
+      }
+      setPlans((current) =>
+        current.map((item) =>
+          item.id === plan.id ? { ...item, title } : item
+        )
+      );
+      setActivePlan((current) =>
+        current?.id === plan.id ? { ...current, title } : current
+      );
+      setRenamingPlanId(null);
+      setRenameDraft("");
+      setNotice("Plan name saved.");
+    } catch (renameError) {
+      setError(getErrorMessage(renameError, "Could not rename this plan."));
+    } finally {
+      setPlanActionBusy(null);
+    }
+  }
+
+  async function deletePlan(plan: SavedPlan) {
+    if (isRequestRunning) return;
+    setError("");
+    setNotice("");
+    setPlanActionBusy(`delete:${plan.id}`);
+    try {
+      const { error: deleteError } = await createClient()
+        .from("plans")
+        .delete()
+        .eq("id", plan.id);
+      if (deleteError) {
+        setError(deleteError.message);
+        return;
+      }
+      setDeleteConfirmPlanId(null);
+      if (viewPlanId === plan.id) {
+        setViewPlanId(null);
+        setViewPlanTasks([]);
+      }
+      await reloadPlansAndTasks();
+      setNotice("Plan deleted.");
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, "Could not delete this plan."));
+    } finally {
+      setPlanActionBusy(null);
+    }
+  }
+
   async function buildAndSavePlan() {
+    if (isRequestRunning) return;
     setError("");
     setNotice("");
     setWarnings([]);
     setSummaries([]);
     if (exams.length === 0) {
       setError("Add a subject before building your plan.");
+      return;
+    }
+    if (!plansLoaded) {
+      setError("Could not check your saved plans. Reload the page before building a new plan.");
       return;
     }
 
@@ -945,10 +1274,12 @@ export default function PlannerPage() {
 
     setBuildingPlan(true);
     try {
+      const now = new Date();
+      const startDate = getLocalDateString(now);
       const plan = buildPlan(planExams, {
         hoursPerDay,
         daysOff: settings.daysOff,
-        startDate: getLocalDateString(new Date()),
+        startDate,
       });
       setWarnings(plan.warnings);
       setSummaries(
@@ -959,43 +1290,55 @@ export default function PlannerPage() {
         }))
       );
 
-      const supabase = createClient();
-      const { data: currentData, error: readError } = await supabase
-        .from("plan_tasks")
-        .select(TASK_COLUMNS)
-        .order("task_date", { ascending: true })
-        .order("position", { ascending: true });
-      if (readError) {
-        setError(readError.message);
+      if (plan.tasks.length === 0) {
+        setNotice("No tasks were created. Check the warnings above and try again.");
         return;
       }
-      const previous = parseRows(currentData as unknown, parseTask);
-      if (previous.invalid) {
-        setError("Your current plan could not be read, so it was not replaced.");
-        return;
-      }
+
       if (
-        previous.rows.length > 0 &&
-        !window.confirm("This replaces your current plan, including ticks. Continue?")
+        activePlan &&
+        !window.confirm(
+          "Your current plan will be saved in History and a new plan will become active. Continue?"
+        )
       ) {
         return;
       }
 
-      if (previous.rows.length > 0) {
-        const { error: deleteError } = await supabase
-          .from("plan_tasks")
-          .delete()
-          .in(
-            "id",
-            previous.rows.map((task) => task.id)
-          );
-        if (deleteError) {
-          setError(deleteError.message);
-          return;
-        }
+      const title =
+        planName.trim().slice(0, 80) || getDefaultPlanTitle(now);
+      const supabase = createClient();
+      const { data: newPlanData, error: createPlanError } = await supabase
+        .from("plans")
+        .insert({
+          title,
+          status: "archived",
+          start_date: startDate,
+          settings: {
+            hoursPerDay,
+            daysOff: settings.daysOff,
+            startDate,
+          },
+          warnings: plan.warnings,
+          summary: plan.summaries,
+        })
+        .select("id")
+        .single();
+      if (createPlanError) {
+        setError(createPlanError.message);
+        return;
       }
 
-      const newRows: PlanTaskInput[] = plan.tasks.map((task) => ({
+      const newPlanId =
+        isRecord(newPlanData) && typeof newPlanData.id === "string"
+          ? newPlanData.id
+          : null;
+      if (!newPlanId) {
+        setError("The plan was created, but its ID could not be read.");
+        return;
+      }
+
+      const newRows: NewPlanTask[] = plan.tasks.map((task) => ({
+        plan_id: newPlanId,
         exam_id: task.examId,
         module: task.module,
         title: task.title,
@@ -1003,79 +1346,93 @@ export default function PlannerPage() {
         pages: task.pages,
         task_date: task.taskDate,
         minutes: Math.max(5, Math.round(task.minutes)),
-        done: false,
-        done_at: null,
         position: task.position,
       }));
 
-      if (newRows.length === 0) {
-        setTasks([]);
-        setNotice("Your plan is saved, but there are no tasks to show.");
-        return;
+      let taskInsertError = "";
+      try {
+        const { error: insertError } = await supabase
+          .from("plan_tasks")
+          .insert(newRows);
+        if (insertError) taskInsertError = insertError.message;
+      } catch (insertError) {
+        taskInsertError = getErrorMessage(
+          insertError,
+          "Could not save the plan tasks."
+        );
       }
 
-      const { data: insertedData, error: insertError } = await supabase
-        .from("plan_tasks")
-        .insert(newRows)
-        .select(TASK_COLUMNS);
-      if (insertError) {
-        const oldRows = previous.rows.map(toTaskInput);
-        if (oldRows.length > 0) {
-          const { data: restoredData, error: restoreError } = await supabase
-            .from("plan_tasks")
-            .insert(oldRows)
-            .select(TASK_COLUMNS);
-          if (restoreError) {
-            setError(
-              `${insertError.message} The previous plan could not be restored: ${restoreError.message}`
-            );
-            return;
-          }
-          const restored = parseRows(restoredData as unknown, parseTask);
-          if (restored.invalid) {
-            setError(
-              `${insertError.message} The previous plan was restored, but its details could not be read.`
-            );
-            return;
-          }
-          setTasks(restored.rows);
+      if (taskInsertError) {
+        let cleanupErrorMessage = "";
+        try {
+          const { error: cleanupError } = await supabase
+            .from("plans")
+            .delete()
+            .eq("id", newPlanId);
+          if (cleanupError) cleanupErrorMessage = cleanupError.message;
+        } catch (cleanupError) {
+          cleanupErrorMessage = getErrorMessage(
+            cleanupError,
+            "The temporary plan could not be removed."
+          );
         }
+        await reloadPlansAndTasks();
         setError(
-          oldRows.length > 0
-            ? `${insertError.message} Your previous plan was restored.`
-            : insertError.message
+          cleanupErrorMessage
+            ? `${taskInsertError} The new plan could not be removed: ${cleanupErrorMessage}`
+            : taskInsertError
         );
         return;
       }
 
-      const inserted = parseRows(insertedData as unknown, parseTask);
-      if (inserted.invalid) {
-        setError("The plan was saved, but the saved tasks could not be read.");
+      const { error: archiveError } = await supabase
+        .from("plans")
+        .update({ status: "archived" })
+        .eq("status", "active")
+        .neq("id", newPlanId);
+      if (archiveError) {
+        await reloadPlansAndTasks();
+        setError(archiveError.message);
         return;
       }
-      setTasks(
-        inserted.rows.sort((a, b) =>
-          a.task_date === b.task_date
-            ? a.position - b.position
-            : a.task_date.localeCompare(b.task_date)
-        )
-      );
+
+      const { error: activateError } = await supabase
+        .from("plans")
+        .update({ status: "active" })
+        .eq("id", newPlanId);
+      if (activateError) {
+        await reloadPlansAndTasks();
+        setError(activateError.message);
+        return;
+      }
+
+      setViewPlanId(null);
+      setViewPlanTasks([]);
+      setPlanName("");
+      await reloadPlansAndTasks();
       setNotice("Your study plan is ready.");
     } catch (planError) {
-      setError(
-        planError instanceof Error
-          ? planError.message
-          : "Could not build your plan."
-      );
+      setError(getErrorMessage(planError, "Could not build your plan."));
     } finally {
       setBuildingPlan(false);
     }
   }
 
   async function toggleTask(task: PlanTask, done: boolean) {
+    const taskPlanId = task.plan_id;
+    if (
+      viewPlanId !== null ||
+      activePlan === null ||
+      taskPlanId === null ||
+      taskPlanId !== activePlan.id ||
+      task.done === done
+    ) {
+      return;
+    }
     setError("");
     const key = String(task.id);
     const doneAt = done ? new Date().toISOString() : null;
+    const progressDelta = done ? 1 : -1;
     setUpdatingTaskIds((current) => new Set(current).add(key));
     setTasks((current) =>
       current.map((item) =>
@@ -1084,12 +1441,32 @@ export default function PlannerPage() {
           : item
       )
     );
+    setPlanProgress((current) => {
+      const progress = current[taskPlanId] ?? { done: 0, total: 0 };
+      return {
+          ...current,
+          [taskPlanId]: {
+            ...progress,
+            done: Math.max(0, Math.min(progress.total, progress.done + progressDelta)),
+          },
+      };
+    });
     try {
       const { error: updateError } = await createClient()
         .from("plan_tasks")
         .update({ done, done_at: doneAt })
         .eq("id", task.id);
       if (updateError) {
+        setPlanProgress((current) => {
+          const progress = current[taskPlanId] ?? { done: 0, total: 0 };
+          return {
+            ...current,
+            [taskPlanId]: {
+              ...progress,
+              done: Math.max(0, Math.min(progress.total, progress.done - progressDelta)),
+            },
+          };
+        });
         setTasks((current) =>
           current.map((item) =>
             item.id === task.id
@@ -1100,6 +1477,16 @@ export default function PlannerPage() {
         setError(updateError.message);
       }
     } catch (updateError) {
+      setPlanProgress((current) => {
+        const progress = current[taskPlanId] ?? { done: 0, total: 0 };
+        return {
+          ...current,
+          [taskPlanId]: {
+            ...progress,
+            done: Math.max(0, Math.min(progress.total, progress.done - progressDelta)),
+          },
+        };
+      });
       setTasks((current) =>
         current.map((item) =>
           item.id === task.id
@@ -1128,12 +1515,23 @@ export default function PlannerPage() {
   const allModulesMissing =
     exams.length > 0 &&
     modulesByExam.every(({ resolution }) => resolution.modules.length === 0);
-  const completedTasks = tasks.filter((task) => task.done).length;
-  const progress = tasks.length
-    ? Math.round((completedTasks / tasks.length) * 100)
+  const viewedPlan =
+    viewPlanId === null
+      ? null
+      : plans.find((plan) => plan.id === viewPlanId) ?? null;
+  const checklistTasks =
+    viewPlanId !== null
+      ? viewPlanTasks
+      : activePlan
+        ? tasks
+        : legacyTasks;
+  const checklistReadOnly = viewPlanId !== null || activePlan === null;
+  const completedTasks = checklistTasks.filter((task) => task.done).length;
+  const progress = checklistTasks.length
+    ? Math.round((completedTasks / checklistTasks.length) * 100)
     : 0;
   const tasksByDate = new Map<string, PlanTask[]>();
-  for (const task of tasks) {
+  for (const task of checklistTasks) {
     const group = tasksByDate.get(task.task_date) ?? [];
     group.push(task);
     tasksByDate.set(task.task_date, group);
@@ -1608,20 +2006,71 @@ export default function PlannerPage() {
         <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold">Your study plan</h2>
+              <h2 className="text-lg font-bold">
+                {viewPlanId ? "Plan checklist" : "Your study plan"}
+              </h2>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                {completedTasks} of {tasks.length} tasks done ({progress}%)
+                {completedTasks} of {checklistTasks.length} tasks done ({progress}%)
               </p>
+              {viewPlanId === null && activePlan && (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Active plan: {activePlan.title} · Created{" "}
+                  {formatCreatedDate(activePlan.created_at)}
+                </p>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => void buildAndSavePlan()}
-              disabled={buildingPlan || exams.length === 0}
-              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
-            >
-              {buildingPlan ? "Building..." : "Build my plan"}
-            </button>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs font-medium">
+                Plan name (optional)
+                <input
+                  type="text"
+                  maxLength={80}
+                  value={planName}
+                  onChange={(event) => setPlanName(event.target.value)}
+                  placeholder="Plan from today"
+                  className="mt-1 block w-full min-w-48 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void buildAndSavePlan()}
+                disabled={
+                  isRequestRunning || exams.length === 0 || !plansLoaded
+                }
+                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+              >
+                {buildingPlan ? "Building..." : "Build my plan"}
+              </button>
+            </div>
           </div>
+
+          {viewPlanId !== null && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--bg)] p-3">
+              <p className="text-sm">
+                {viewedPlan
+                  ? `${viewedPlan.title} · Created ${formatCreatedDate(viewedPlan.created_at)}`
+                  : "This saved plan is no longer available."}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewPlanId(null);
+                  setViewPlanTasks([]);
+                }}
+                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+              >
+                Back to my active plan
+              </button>
+            </div>
+          )}
+          {viewPlanId === null && !activePlan && legacyTasks.length > 0 && (
+            <h3 className="mt-5 text-sm font-bold">
+              Earlier plan (before history)
+              <span className="ml-2 font-normal text-[var(--muted)]">
+                Read-only
+              </span>
+            </h3>
+          )}
 
           {warnings.length > 0 && (
             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
@@ -1644,9 +2093,15 @@ export default function PlannerPage() {
             </div>
           )}
 
-          {tasks.length === 0 ? (
+          {checklistTasks.length === 0 ? (
             <p className="mt-5 text-sm text-[var(--muted)]">
-              No plan yet. Add subjects and modules, then build your plan.
+              {viewPlanId !== null
+                ? "This plan has no tasks."
+                : activePlan
+                  ? "Your active plan has no tasks yet."
+                  : legacyTasks.length > 0
+                    ? "The earlier plan has no tasks."
+                    : "No plan yet. Add subjects and modules, then build your plan."}
             </p>
           ) : (
             <div className="mt-5 space-y-5">
@@ -1673,7 +2128,11 @@ export default function PlannerPage() {
                           <input
                             type="checkbox"
                             checked={task.done}
-                            disabled={updatingTaskIds.has(taskKey)}
+                            disabled={
+                              checklistReadOnly ||
+                              updatingTaskIds.has(taskKey) ||
+                              isRequestRunning
+                            }
                             onChange={(event) =>
                               void toggleTask(task, event.target.checked)
                             }
@@ -1700,6 +2159,148 @@ export default function PlannerPage() {
                   </div>
                 </section>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+          <h2 className="text-lg font-bold">Plan history</h2>
+          {plans.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              No saved plans yet. Build your first plan above.
+            </p>
+          ) : (
+            <div className="mt-4 divide-y divide-[var(--border)]">
+              {plans.map((plan) => {
+                const planTaskProgress = planProgress[plan.id] ?? {
+                  done: 0,
+                  total: 0,
+                };
+                const isRenaming = renamingPlanId === plan.id;
+                const isConfirmingDelete = deleteConfirmPlanId === plan.id;
+                return (
+                  <div key={plan.id} className="py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        {isRenaming ? (
+                          <input
+                            type="text"
+                            maxLength={80}
+                            autoFocus
+                            value={renameDraft}
+                            onChange={(event) =>
+                              setRenameDraft(event.target.value)
+                            }
+                            onBlur={(event) => {
+                              if (renameCancelledRef.current) {
+                                renameCancelledRef.current = false;
+                                return;
+                              }
+                              void savePlanRename(plan, event.currentTarget.value);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                event.currentTarget.blur();
+                              } else if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelPlanRename();
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            aria-label="Plan name"
+                            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                          />
+                        ) : (
+                          <p className="break-words font-semibold">
+                            {plan.title}
+                          </p>
+                        )}
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
+                          <span>Created {formatCreatedDate(plan.created_at)}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-semibold ${
+                              plan.status === "active"
+                                ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                                : "bg-[var(--bg)]"
+                            }`}
+                          >
+                            {plan.status === "active" ? "Active" : "Archived"}
+                          </span>
+                          <span>
+                            {planTaskProgress.done} of {planTaskProgress.total}{" "}
+                            tasks done
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void viewSavedPlan(plan)}
+                          disabled={isRequestRunning}
+                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                        >
+                          View
+                        </button>
+                        {plan.status === "archived" && (
+                          <button
+                            type="button"
+                            onClick={() => void makePlanActive(plan)}
+                            disabled={isRequestRunning}
+                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          >
+                            Make active
+                          </button>
+                        )}
+                        {!isRenaming && (
+                          <button
+                            type="button"
+                            onClick={() => startPlanRename(plan)}
+                            disabled={isRequestRunning}
+                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          >
+                            Rename
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmPlanId(plan.id)}
+                          disabled={isRequestRunning}
+                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    {isConfirmingDelete && (
+                      <div className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
+                        <p className="text-sm">
+                          Delete this plan and its checklist? This cannot be
+                          undone.
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmPlanId(null)}
+                            disabled={isRequestRunning}
+                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deletePlan(plan)}
+                            disabled={isRequestRunning}
+                            className="rounded-lg bg-[var(--bad)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                          >
+                            Delete plan
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
