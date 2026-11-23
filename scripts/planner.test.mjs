@@ -93,10 +93,7 @@ test("two exams share the days and no day is overfilled", () => {
       id: "b",
       subject: "OS",
       examDate: "2026-12-04",
-      modules: [
-        { name: "M1", pages: 40 },
-        { name: "M2", pages: 40 },
-      ],
+      modules: [{ name: "M1", pages: 40 }, { name: "M2", pages: 40 }],
     }),
   ];
   const { tasks } = buildPlan(exams, settings({ hoursPerDay: 3 }));
@@ -113,6 +110,52 @@ test("the same input always gives the same plan", () => {
 
 test("invalid dates throw an error", () => {
   assert.throws(() => buildPlan([exam({ examDate: "2026-13-40" })], settings()));
+});
+
+test("every task title says which subject it belongs to", () => {
+  const exams = [
+    exam({ id: "a", subject: "DBMS" }),
+    exam({ id: "b", subject: "Operating Systems", examDate: "2026-12-02" }),
+  ];
+  const { tasks } = buildPlan(exams, settings());
+  for (const t of tasks) {
+    const subject = t.examId === "a" ? "DBMS" : "Operating Systems";
+    assert.ok(t.title.includes(subject), `missing subject in: ${t.title}`);
+  }
+});
+
+test("learning is spread evenly, not crammed into the first days", () => {
+  const { tasks } = buildPlan([exam({ examDate: "2026-12-07" })], settings());
+  const learn = perDay(tasks.filter((t) => t.kind === "learn"));
+  // learning days are 11-23 .. 12-04 (12 days); every one of them gets work
+  assert.equal(learn.size, 12);
+  const values = [...learn.values()];
+  assert.ok(Math.max(...values) - Math.min(...values) <= 25);
+});
+
+test("revision is one block per day on the last two days, not split on one day", () => {
+  const { tasks } = buildPlan([exam()], settings());
+  const revise = tasks.filter((t) => t.kind === "revise");
+  assert.equal(revise.length, 2);
+  assert.deepEqual(revise.map((t) => t.taskDate), ["2026-11-28", "2026-11-29"]);
+});
+
+test("the day before each exam always has revision on it", () => {
+  const exams = [
+    exam({ id: "a", subject: "DBMS", examDate: "2026-11-30" }),
+    exam({ id: "b", subject: "OS", examDate: "2026-12-02" }),
+  ];
+  const { tasks } = buildPlan(exams, settings());
+  assert.ok(tasks.some((t) => t.examId === "a" && t.kind === "revise" && t.taskDate === "2026-11-29"));
+  assert.ok(tasks.some((t) => t.examId === "b" && t.kind === "revise" && t.taskDate === "2026-12-01"));
+});
+
+test("no task is longer than 90 minutes and every task has minutes", () => {
+  const { tasks } = buildPlan(
+    [exam({ modules: [{ name: "Huge", pages: 200 }], examDate: "2026-12-05" })],
+    settings({ hoursPerDay: 6 })
+  );
+  for (const t of tasks) assert.ok(t.minutes > 0 && t.minutes <= 90, t.title);
 });
 
 console.log(`\n${passed} tests passed`);
