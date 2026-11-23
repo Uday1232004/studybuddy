@@ -34,9 +34,13 @@ type Study = {
   quiz: QuizQuestion[];
 };
 
+type StudyMode = "quick" | "teacher";
+type ExamMarks = 2 | 5 | 10;
+
 export default function Home() {
   const [notes, setNotes] = useState("");
   const [study, setStudy] = useState<Study | null>(null);
+  const [teacherAnswer, setTeacherAnswer] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -48,7 +52,7 @@ export default function Home() {
   const [showPdfChip, setShowPdfChip] = useState(false);
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
 
-  async function handleGenerate() {
+  async function handleGenerate(mode: StudyMode, marks: ExamMarks) {
     if (notes.trim() === "") {
       setError("Please paste some notes first.");
       return;
@@ -57,18 +61,21 @@ export default function Home() {
     setLoading(true);
     setError("");
     setStudy(null);
+    setTeacherAnswer(null);
     setAnswers({});
 
     try {
       const response = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify({ notes, mode, marks }),
       });
       const data = await response.json();
 
       if (!response.ok) {
         setError(data.error || "Something went wrong.");
+      } else if (typeof data.teacher === "string") {
+        setTeacherAnswer(data.teacher);
       } else {
         setStudy(data);
         setExplanationKey((key) => key + 1);
@@ -85,6 +92,7 @@ export default function Home() {
   function handleSelect(kit: SavedKit) {
     setNotes(kit.notes);
     setStudy({ summary: kit.summary, quiz: kit.quiz });
+    setTeacherAnswer(null);
     setExplanationKey((key) => key + 1);
     setPdfAttachment(null);
     setShowPdfChip(false);
@@ -97,6 +105,7 @@ export default function Home() {
   function handleNewNotes() {
     setNotes("");
     setStudy(null);
+    setTeacherAnswer(null);
     setPdfAttachment(null);
     setShowPdfChip(false);
     setAnswers({});
@@ -223,6 +232,7 @@ export default function Home() {
             loading={loading}
             error={error}
             summary={study?.summary ?? null}
+            teacher={teacherAnswer}
             explanationKey={explanationKey}
             uploadingPdf={uploadingPdf}
             pdfAttachment={pdfAttachment}

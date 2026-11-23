@@ -1,4 +1,5 @@
 import { askLLM } from "../../../lib/llm";
+import { buildTeacherPrompt } from "../../../lib/prompts";
 import { createClient } from "../../../lib/supabase/server";
 
 const MAX_CHARS = 20000;
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const notes: string = body.notes ?? "";
+  const mode = body.mode === "teacher" ? "teacher" : "quick";
+  const marks: 2 | 5 | 10 =
+    body.marks === 2 || body.marks === 10 ? body.marks : 5;
 
   if (notes.trim() === "") {
     return Response.json({ error: "Notes cannot be empty." }, { status: 400 });
@@ -68,6 +72,18 @@ export async function POST(request: Request) {
       { error: "Notes are too long. Please paste under 20,000 characters." },
       { status: 400 }
     );
+  }
+
+  if (mode === "teacher") {
+    try {
+      const text = await askLLM(buildTeacherPrompt(notes, marks), false);
+      return Response.json({ teacher: text });
+    } catch {
+      return Response.json(
+        { error: "The AI is busy right now. Please try again in a moment." },
+        { status: 502 }
+      );
+    }
   }
 
   const prompt = `You are a study assistant. Read the student's notes and respond with ONLY valid JSON in exactly this shape:
