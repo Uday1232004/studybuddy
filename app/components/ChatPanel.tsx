@@ -11,6 +11,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import PagePictures, { type PagePictureSource } from "./PagePictures";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -25,6 +26,7 @@ export type ChatRestoreSession = {
 
 type Props = {
   sourceIds: string[];
+  sources: PagePictureSource[];
   restoreSession: ChatRestoreSession;
   onMessagesChange: (messages: ChatMessage[]) => void;
   onAssistantReply: (messages: ChatMessage[]) => void;
@@ -111,6 +113,7 @@ function getError(data: unknown): { message: string; detail: string } {
 
 export default function ChatPanel({
   sourceIds,
+  sources,
   restoreSession,
   onMessagesChange,
   onAssistantReply,
@@ -565,60 +568,69 @@ export default function ChatPanel({
                 }`}
               >
                 {message.role === "assistant" ? (
-                  <div className="w-full max-w-[720px] rounded-2xl bg-[var(--surface)] px-5 py-4 text-base text-[var(--text)]">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        h2: ({ children }) => (
-                          <h2 className="mt-6 text-lg font-bold leading-7 first:mt-0">
-                            {children}
-                          </h2>
-                        ),
-                        h3: ({ children }) => (
-                          <h3 className="mt-5 text-base font-bold leading-7">
-                            {children}
-                          </h3>
-                        ),
-                        p: ({ children }) => (
-                          <p className="my-3 leading-7">{children}</p>
-                        ),
-                        ul: ({ children }) => (
-                          <ul className="my-3 list-disc space-y-2 pl-6">
-                            {children}
-                          </ul>
-                        ),
-                        ol: ({ children }) => (
-                          <ol className="my-3 list-decimal space-y-2 pl-6">
-                            {children}
-                          </ol>
-                        ),
-                        li: ({ children }) => (
-                          <li className="pl-1 leading-7">{children}</li>
-                        ),
-                        strong: ({ children }) => (
-                          <strong className="font-bold">{children}</strong>
-                        ),
-                        table: ({ children }) => (
-                          <div className="my-4 max-w-full overflow-x-auto">
-                            <table className="w-full border-collapse text-left text-sm">
+                  <div className="w-full max-w-[720px]">
+                    <div className="rounded-2xl bg-[var(--surface)] px-5 py-4 text-base text-[var(--text)]">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h2: ({ children }) => (
+                            <h2 className="mt-6 text-lg font-bold leading-7 first:mt-0">
                               {children}
-                            </table>
-                          </div>
-                        ),
-                        th: ({ children }) => (
-                          <th className="border border-[var(--border)] bg-[var(--surface-hover)] px-3 py-2 font-semibold">
-                            {children}
-                          </th>
-                        ),
-                        td: ({ children }) => (
-                          <td className="border border-[var(--border)] px-3 py-2">
-                            {children}
-                          </td>
-                        ),
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                            </h2>
+                          ),
+                          h3: ({ children }) => (
+                            <h3 className="mt-5 text-base font-bold leading-7">
+                              {children}
+                            </h3>
+                          ),
+                          p: ({ children }) => (
+                            <p className="my-3 leading-7">{children}</p>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="my-3 list-disc space-y-2 pl-6">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="my-3 list-decimal space-y-2 pl-6">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="pl-1 leading-7">{children}</li>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="font-bold">{children}</strong>
+                          ),
+                          table: ({ children }) => (
+                            <div className="my-4 max-w-full overflow-x-auto">
+                              <table className="w-full border-collapse text-left text-sm">
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          th: ({ children }) => (
+                            <th className="border border-[var(--border)] bg-[var(--surface-hover)] px-3 py-2 font-semibold">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="border border-[var(--border)] px-3 py-2">
+                              {children}
+                            </td>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                    {!(loading && index === visibleMessages.length - 1) &&
+                      message.content !== "START_LESSON" && (
+                        <PagePictures
+                          text={message.content}
+                          sources={sources}
+                        />
+                      )}
                   </div>
                 ) : (
                   <p

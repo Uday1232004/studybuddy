@@ -12,6 +12,7 @@ import ChatPanel, {
   type ChatMessage,
   type ChatRestoreSession,
 } from "./ChatPanel";
+import type { PagePictureSource } from "./PagePictures";
 
 export type Source = {
   id: string;
@@ -109,6 +110,16 @@ export default function Workspace({
     (total, source) =>
       source.status || source.error ? total : total + (source.pages ?? 0),
     0
+  );
+  const pagePictureSources = useMemo<PagePictureSource[]>(
+    () =>
+      sources.map(({ id, name, filePath, pages }) => ({
+        id,
+        name,
+        filePath,
+        pages,
+      })),
+    [sources]
   );
 
   function handleDragEnter(event: DragEvent<HTMLElement>) {
@@ -439,6 +450,7 @@ export default function Workspace({
 
       <ChatPanel
         sourceIds={sourceIds}
+        sources={pagePictureSources}
         restoreSession={restoreSession}
         onMessagesChange={onMessagesChange}
         onAssistantReply={onAssistantReply}
