@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import History, { type SavedKit } from "./History";
-import QuizPanel, { type QuizQuestion } from "./components/QuizPanel";
 import MobileTabs, { type TabName } from "./components/MobileTabs";
 import TopBar from "./components/TopBar";
 import Workspace from "./components/Workspace";
@@ -29,88 +28,48 @@ function isPdfExtractResult(value: unknown): value is PdfExtractResult {
   );
 }
 
-type Study = {
-  summary: string[];
-  quiz: QuizQuestion[];
-};
-
-type StudyMode = "quick" | "teacher";
-type ExamMarks = 2 | 5 | 10;
-
 export default function Home() {
   const [notes, setNotes] = useState("");
-  const [study, setStudy] = useState<Study | null>(null);
-  const [teacherAnswer, setTeacherAnswer] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [historyKey, setHistoryKey] = useState(0);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabName>("Workspace");
-  const [explanationKey, setExplanationKey] = useState(0);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [pdfAttachment, setPdfAttachment] = useState<PdfAttachment | null>(null);
   const [showPdfChip, setShowPdfChip] = useState(false);
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
 
-  async function handleGenerate(mode: StudyMode, marks: ExamMarks) {
-    if (notes.trim() === "") {
-      setError("Please paste some notes first.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setStudy(null);
-    setTeacherAnswer(null);
-    setAnswers({});
-
-    try {
-      const response = await fetch("/api/study", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes, mode, marks }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Something went wrong.");
-      } else if (typeof data.teacher === "string") {
-        setTeacherAnswer(data.teacher);
-      } else {
-        setStudy(data);
-        setExplanationKey((key) => key + 1);
-        setHistoryKey((key) => key + 1);
-        setActiveTab("Workspace");
-      }
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function handleSelect(kit: SavedKit) {
+    setActiveHistoryId(kit.id);
     setNotes(kit.notes);
-    setStudy({ summary: kit.summary, quiz: kit.quiz });
-    setTeacherAnswer(null);
-    setExplanationKey((key) => key + 1);
     setPdfAttachment(null);
     setShowPdfChip(false);
-    setAnswers({});
     setError("");
     setActiveTab("Workspace");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleNewNotes() {
+    setActiveHistoryId(null);
     setNotes("");
-    setStudy(null);
-    setTeacherAnswer(null);
     setPdfAttachment(null);
     setShowPdfChip(false);
-    setAnswers({});
     setError("");
     setActiveTab("Workspace");
+  }
+
+  function handleNotesChange(value: string) {
+    setActiveHistoryId(null);
+    setNotes(value);
+  }
+
+  function handleHistoryItemsDeleted(ids: string[]) {
+    if (activeHistoryId && ids.includes(activeHistoryId)) {
+      setActiveHistoryId(null);
+      setNotes("");
+      setPdfAttachment(null);
+      setShowPdfChip(false);
+      setError("");
+    }
   }
 
   async function handlePdfFile(file: File) {
@@ -155,6 +114,7 @@ export default function Home() {
           ? data.text
           : `${currentNotes}\n\n${data.text}`,
       );
+      setActiveHistoryId(null);
       setPdfAttachment({
         fileName: file.name,
         pages: data.pages,
@@ -168,21 +128,11 @@ export default function Home() {
     }
   }
 
-  function choose(questionIndex: number, optionIndex: number) {
-    if (answers[questionIndex] !== undefined) return;
-    setAnswers({ ...answers, [questionIndex]: optionIndex });
-  }
-
-  const answeredCount = Object.keys(answers).length;
-  const score = study
-    ? study.quiz.filter((question, index) => answers[index] === question.answerIndex).length
-    : 0;
-
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
       <TopBar />
       <MobileTabs activeTab={activeTab} onSelect={setActiveTab} />
-      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_360px]">
+      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside
           className={`${activeTab === "Notes" ? "flex" : "hidden"} min-h-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] lg:flex`}
         >
@@ -199,41 +149,20 @@ export default function Home() {
                 </svg>
               </span>
             </button>
-            <History refreshKey={historyKey} onSelect={handleSelect} />
+            <History
+              refreshKey={0}
+              onSelect={handleSelect}
+              onItemsDeleted={handleHistoryItemsDeleted}
+            />
           </div>
         </aside>
         <section
           className={`${activeTab === "Workspace" ? "flex" : "hidden"} min-h-0 flex-col overflow-y-auto lg:flex`}
         >
-          {study && (
-            <div className="mx-auto flex w-full max-w-[720px] gap-8 px-6 pt-7 sm:px-10">
-              <div>
-                <p className="text-3xl font-extrabold leading-none text-[var(--accent)]">
-                  {study.summary.length}
-                </p>
-                <p className="mt-1 text-[10px] font-semibold tracking-[0.16em] text-[var(--muted)] uppercase">
-                  Key points
-                </p>
-              </div>
-              <div>
-                <p className="text-3xl font-extrabold leading-none text-[var(--accent)]">
-                  {study.quiz.length}
-                </p>
-                <p className="mt-1 text-[10px] font-semibold tracking-[0.16em] text-[var(--muted)] uppercase">
-                  Questions
-                </p>
-              </div>
-            </div>
-          )}
           <Workspace
             notes={notes}
-            onNotesChange={setNotes}
-            onGenerate={handleGenerate}
-            loading={loading}
+            onNotesChange={handleNotesChange}
             error={error}
-            summary={study?.summary ?? null}
-            teacher={teacherAnswer}
-            explanationKey={explanationKey}
             uploadingPdf={uploadingPdf}
             pdfAttachment={pdfAttachment}
             showPdfChip={showPdfChip}
@@ -241,19 +170,6 @@ export default function Home() {
             onPdfFileSelect={handlePdfFile}
             onDismissPdf={() => setShowPdfChip(false)}
             onPdfDragStateChange={setIsDraggingPdf}
-          />
-        </section>
-        <section
-          className={`${activeTab === "Quiz" ? "flex" : "hidden"} min-h-0 flex-col border-l border-[var(--border)] lg:flex`}
-        >
-          <QuizPanel
-            quiz={study?.quiz ?? null}
-            answers={answers}
-            answeredCount={answeredCount}
-            score={score}
-            loading={loading}
-            onChoose={choose}
-            onTryAgain={() => setAnswers({})}
           />
         </section>
       </main>

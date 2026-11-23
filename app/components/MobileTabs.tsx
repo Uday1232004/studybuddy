@@ -1,19 +1,19 @@
 "use client";
 
-export type TabName = "Notes" | "Workspace" | "Quiz";
+export type TabName = "Notes" | "Workspace";
 
 type Props = {
   activeTab: TabName;
   onSelect: (tab: TabName) => void;
 };
 
-const tabs: TabName[] = ["Notes", "Workspace", "Quiz"];
+const tabs: TabName[] = ["Notes", "Workspace"];
 
 export default function MobileTabs({ activeTab, onSelect }: Props) {
   return (
     <nav
       aria-label="Study sections"
-      className="grid shrink-0 grid-cols-3 border-b border-[var(--border)] bg-[var(--surface)] lg:hidden"
+      className="grid shrink-0 grid-cols-2 border-b border-[var(--border)] bg-[var(--surface)] lg:hidden"
     >
       {tabs.map((tab) => (
         <button
