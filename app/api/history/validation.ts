@@ -3,6 +3,8 @@ export type HistorySource = {
   name: string;
   type: "pdf" | "text";
   enabled: boolean;
+  filePath: string | null;
+  fileSize: number;
   pages?: number;
 };
 
@@ -27,8 +29,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const FILE_PATH_PATTERN = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/;
 
-export function validateHistoryPayload(value: unknown): ValidationResult {
+export function validateHistoryPayload(
+  value: unknown,
+  userId: string
+): ValidationResult {
   if (!isRecord(value) || typeof value.title !== "string") {
     return { error: "Please send a valid chat." };
   }
@@ -61,6 +67,20 @@ export function validateHistoryPayload(value: unknown): ValidationResult {
       name: item.name.trim().slice(0, 120),
       type: item.type,
       enabled: item.enabled,
+      filePath:
+        typeof item.filePath === "string" &&
+        item.filePath.length <= 200 &&
+        FILE_PATH_PATTERN.test(item.filePath) &&
+        item.filePath.startsWith(`${userId}/`) &&
+        item.filePath.endsWith(`/${item.id}.pdf`)
+          ? item.filePath
+          : null,
+      fileSize:
+        typeof item.fileSize === "number" &&
+        Number.isFinite(item.fileSize) &&
+        item.fileSize >= 0
+          ? item.fileSize
+          : 0,
       ...(typeof item.pages === "number" ? { pages: item.pages } : {}),
     });
   }

@@ -10,14 +10,17 @@ import MobileTabs, { type TabName } from "./components/MobileTabs";
 import TopBar from "./components/TopBar";
 import Workspace, { type Source } from "./components/Workspace";
 import { readPdfPages } from "../lib/pdf-client";
+import { createClient as createBrowserClient } from "../lib/supabase/client";
 
-const MAX_FILE_BYTES = 150 * 1024 * 1024;
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_FILE_ERROR = "This file is over 50 MB, the current storage limit.";
 const MAX_PDF_PAGES = 2000;
 const MAX_SOURCES = 20;
 const INDEX_BATCH_PAGES = 10;
 const DAILY_QUOTA_MESSAGE =
   "The daily Gemini embedding limit is used up. Try again tomorrow, or enable billing for the Gemini key.";
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const FILE_PATH_PATTERN = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/;
 
 type SourceIndexWork = {
   pages: string[];
@@ -35,6 +38,8 @@ export default function Home() {
   const sourcesRef = useRef<Source[]>([]);
   const sourceIndexWorkRef = useRef<Map<string, SourceIndexWork>>(new Map());
   const sourceControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const sourceTasksRef = useRef<Map<string, Promise<void>>>(new Map());
+  const sourceFilePathsRef = useRef<Map<string, string>>(new Map());
   const pdfQueueRef = useRef<Promise<void>>(Promise.resolve());
   const sourceGenerationRef = useRef(0);
   const dailyQuotaStopRef = useRef(false);
@@ -85,6 +90,8 @@ export default function Home() {
         name: source.name.slice(0, 120),
         type: source.type,
         enabled: source.enabled,
+        filePath: source.filePath,
+        fileSize: source.fileSize,
         ...(typeof source.pages === "number" ? { pages: source.pages } : {}),
       }));
     const title =
@@ -205,6 +212,19 @@ export default function Home() {
           name: value.name,
           preview: "",
           enabled: value.enabled,
+          filePath:
+            typeof value.filePath === "string" &&
+            value.filePath.length <= 200 &&
+            FILE_PATH_PATTERN.test(value.filePath) &&
+            value.filePath.endsWith(`/${value.id}.pdf`)
+              ? value.filePath
+              : null,
+          fileSize:
+            typeof value.fileSize === "number" &&
+            Number.isFinite(value.fileSize) &&
+            value.fileSize >= 0
+              ? value.fileSize
+              : 0,
           ...(typeof value.pages === "number" ? { pages: value.pages } : {}),
         },
       ];
@@ -220,6 +240,8 @@ export default function Home() {
             name: "Saved notes",
             preview: savedNotesText.slice(0, 2000),
             enabled: true,
+            filePath: null,
+            fileSize: 0,
             pages: 1,
             status: "indexing",
             progress: { start: 1, end: 1, total: 1 },
@@ -235,6 +257,11 @@ export default function Home() {
     setCurrentChatId(chatId);
     chatMessagesRef.current = restoredMessages;
     restoredSourcesRef.current = nextSources;
+    for (const source of nextSources) {
+      if (source.filePath) {
+        sourceFilePathsRef.current.set(source.id, source.filePath);
+      }
+    }
     setRestoreSession((current) => ({
       key: current.key + 1,
       messages: restoredMessages,
@@ -281,10 +308,90 @@ export default function Home() {
   }
 
   function handleRemoveSource(id: string) {
+    const source = sourcesRef.current.find((item) => item.id === id);
+    if (!source) return;
+
     sourceControllersRef.current.get(id)?.abort();
-    sourceControllersRef.current.delete(id);
     sourceIndexWorkRef.current.delete(id);
     replaceSources(sourcesRef.current.filter((source) => source.id !== id));
+
+    const task = sourceTasksRef.current.get(id);
+    void (async () => {
+      if (task) {
+        try {
+          await task;
+        } catch {
+          console.error("Could not stop source processing before cleanup.");
+        }
+      }
+
+      const filePath =
+        sourceFilePathsRef.current.get(id) ?? source.filePath;
+      const supabase = createBrowserClient();
+      const cleanupTasks: {
+        label: string;
+        run: () => Promise<void>;
+      }[] = [
+        {
+          label: "source index rows",
+          run: async () => {
+            const { error } = await supabase
+              .from("source_chunks")
+              .delete()
+              .eq("source_id", id);
+            if (error) throw error;
+          },
+        },
+      ];
+      if (filePath) {
+        cleanupTasks.push({
+          label: "source PDF",
+          run: async () => {
+            const { error } = await supabase
+              .storage.from("pdfs")
+              .remove([filePath]);
+            if (error) throw error;
+          },
+        });
+      }
+
+      const results = await Promise.allSettled(
+        cleanupTasks.map((taskToRun) => taskToRun.run())
+      );
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(`Could not remove ${cleanupTasks[index].label}.`);
+        }
+      });
+      sourceFilePathsRef.current.delete(id);
+    })();
+  }
+
+  async function handleViewSource(id: string) {
+    const source = sourcesRef.current.find((item) => item.id === id);
+    if (!source?.filePath) return;
+
+    updateSource(id, { viewError: undefined });
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      updateSource(id, { viewError: "Could not open this PDF." });
+      return;
+    }
+    tab.opener = null;
+
+    try {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.storage
+        .from("pdfs")
+        .createSignedUrl(source.filePath, 3600);
+      if (error || !data?.signedUrl) {
+        throw new Error("Could not create a signed PDF URL.");
+      }
+      tab.location.href = data.signedUrl;
+    } catch {
+      tab.close();
+      updateSource(id, { viewError: "Could not open this PDF." });
+    }
   }
 
   function stopIndexingForDailyQuota(failedId: string, message: string) {
@@ -456,11 +563,25 @@ export default function Home() {
 
     const controller = new AbortController();
     sourceControllersRef.current.set(id, controller);
-    void indexSourceBatches(id, name, work, controller).finally(() => {
+    const task = indexSourceBatches(id, name, work, controller).finally(() => {
       if (sourceControllersRef.current.get(id) === controller) {
         sourceControllersRef.current.delete(id);
       }
     });
+    sourceTasksRef.current.set(id, task);
+    void task.then(
+      () => {
+        if (sourceTasksRef.current.get(id) === task) {
+          sourceTasksRef.current.delete(id);
+        }
+      },
+      () => {
+        if (sourceTasksRef.current.get(id) === task) {
+          sourceTasksRef.current.delete(id);
+        }
+        console.error("Could not finish source indexing.");
+      }
+    );
   }
 
   function handleAddTextSource(name: string, text: string) {
@@ -478,6 +599,8 @@ export default function Home() {
       name: sourceName,
       preview: text.slice(0, 2000),
       enabled: true,
+      filePath: null,
+      fileSize: 0,
       pages: 1,
       status: "indexing",
       progress: { start: 1, end: 1, total: 1 },
@@ -521,6 +644,10 @@ export default function Home() {
       setSourceMessage("You can add up to 20 sources.");
       return;
     }
+    if (file.size > MAX_FILE_BYTES) {
+      setSourceMessage(MAX_FILE_ERROR);
+      return;
+    }
 
     const id = crypto.randomUUID();
     const name = uniqueSourceName(file.name);
@@ -530,88 +657,157 @@ export default function Home() {
       name,
       preview: "",
       enabled: true,
+      filePath: null,
+      fileSize: file.size,
       status: "reading",
       progress: { start: 0, end: 0, total: 0 },
+      savingOriginal: true,
     };
     replaceSources([...sourcesRef.current, source]);
-    setSourceMessage("");
-
-    if (file.size > MAX_FILE_BYTES) {
-      updateSource(id, {
-        status: undefined,
-        progress: undefined,
-        error: "That PDF is too large. Please use a file under 150 MB.",
-      });
-      return;
-    }
 
     const controller = new AbortController();
     sourceControllersRef.current.set(id, controller);
-    try {
-      const pages = await readPdfPages(
-        file,
-        (done, total) => {
-          if (controller.signal.aborted) return;
-          updateSource(id, {
-            status: "reading",
-            progress: { start: done, end: done, total },
-          });
-        },
-        controller.signal
-      );
-      if (controller.signal.aborted) return;
-      if (dailyQuotaStopRef.current) {
-        updateSource(id, {
-          status: undefined,
-          progress: undefined,
-          error: DAILY_QUOTA_MESSAGE,
-          errorDetail: undefined,
-          retryable: false,
-        });
-        return;
-      }
-      if (pages.length > MAX_PDF_PAGES) return;
-      if (!sourcesRef.current.some((source) => source.id === id)) return;
+    const uploadPromise = (async () => {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw new Error(error.message);
+      const userId = data.user?.id;
+      if (!userId) throw new Error("Please sign in to save the original.");
 
-      const work: SourceIndexWork = {
-        pages,
-        startPage: 1,
-        offset: 0,
-        first: true,
-      };
-      sourceIndexWorkRef.current.set(id, work);
-      updateSource(id, {
-        preview: pages.join("\n\n").slice(0, 2000),
-        pages: pages.length,
-        status: "indexing",
-        progress: {
-          start: 1,
-          end: Math.min(INDEX_BATCH_PAGES, pages.length),
-          total: pages.length,
-        },
-      });
-      await indexSourceBatches(id, name, work, controller);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      updateSource(id, {
-        status: undefined,
-        progress: undefined,
-        error:
-          error instanceof Error
-            ? error.message
-            : "This is not a readable PDF",
-        errorDetail: undefined,
-        retryable: false,
-      });
+      const filePath = `${userId}/${id}.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from("pdfs")
+        .upload(filePath, file, {
+          contentType: "application/pdf",
+          upsert: false,
+        });
+      if (uploadError) throw new Error(uploadError.message);
+
+      sourceFilePathsRef.current.set(id, filePath);
+      return filePath;
+    })();
+    const uploadStatusPromise = uploadPromise.then(
+      (filePath) => {
+        updateSource(id, {
+          filePath,
+          savingOriginal: false,
+          originalNotSaved: false,
+          originalSaveError: undefined,
+        });
+        return filePath;
+      },
+      (error: unknown) => {
+        updateSource(id, {
+          filePath: null,
+          savingOriginal: false,
+          originalNotSaved: true,
+          originalSaveError:
+            process.env.NODE_ENV !== "production"
+              ? error instanceof Error
+                ? error.message
+                : String(error)
+              : undefined,
+        });
+        throw error;
+      }
+    );
+    const readPromise = readPdfPages(
+      file,
+      (done, total) => {
+        if (controller.signal.aborted) return;
+        updateSource(id, {
+          status: "reading",
+          progress: { start: done, end: done, total },
+        });
+      },
+      controller.signal
+    );
+
+    const task = (async () => {
+      try {
+        const [pagesResult] = await Promise.allSettled([
+          readPromise,
+          uploadStatusPromise,
+        ]);
+
+        if (controller.signal.aborted) return;
+        if (pagesResult.status === "rejected") {
+          updateSource(id, {
+            status: undefined,
+            progress: undefined,
+            error:
+              pagesResult.reason instanceof Error
+                ? pagesResult.reason.message
+                : "This is not a readable PDF",
+            errorDetail: undefined,
+            retryable: false,
+          });
+          return;
+        }
+        if (dailyQuotaStopRef.current) {
+          updateSource(id, {
+            status: undefined,
+            progress: undefined,
+            error: DAILY_QUOTA_MESSAGE,
+            errorDetail: undefined,
+            retryable: false,
+          });
+          return;
+        }
+
+        const pages = pagesResult.value;
+        if (pages.length > MAX_PDF_PAGES) return;
+        if (!sourcesRef.current.some((current) => current.id === id)) return;
+
+        const work: SourceIndexWork = {
+          pages,
+          startPage: 1,
+          offset: 0,
+          first: true,
+        };
+        sourceIndexWorkRef.current.set(id, work);
+        updateSource(id, {
+          preview: pages.join("\n\n").slice(0, 2000),
+          pages: pages.length,
+          status: "indexing",
+          progress: {
+            start: 1,
+            end: Math.min(INDEX_BATCH_PAGES, pages.length),
+            total: pages.length,
+          },
+        });
+        await indexSourceBatches(id, name, work, controller);
+      } catch {
+        if (!controller.signal.aborted) {
+          updateSource(id, {
+            status: undefined,
+            progress: undefined,
+            error: "Could not process this PDF.",
+            retryable: false,
+          });
+        }
+      } finally {
+        if (sourceControllersRef.current.get(id) === controller) {
+          sourceControllersRef.current.delete(id);
+        }
+      }
+    })();
+    sourceTasksRef.current.set(id, task);
+    try {
+      await task;
     } finally {
-      if (sourceControllersRef.current.get(id) === controller) {
-        sourceControllersRef.current.delete(id);
+      if (sourceTasksRef.current.get(id) === task) {
+        sourceTasksRef.current.delete(id);
       }
     }
   }
 
   function addPdfFiles(files: File[]) {
-    const queuedFiles = [...files];
+    const oversized = files.some((file) => file.size > MAX_FILE_BYTES);
+    const queuedFiles = files.filter((file) => file.size <= MAX_FILE_BYTES);
+    setSourceMessage(oversized ? MAX_FILE_ERROR : "");
+    if (queuedFiles.length === 0) return;
+
     const generation = sourceGenerationRef.current;
     pdfQueueRef.current = pdfQueueRef.current.then(async () => {
       for (const file of queuedFiles) {
@@ -678,6 +874,7 @@ export default function Home() {
             onRetrySource={handleRetrySource}
             onToggleSource={handleToggleSource}
             onRemoveSource={handleRemoveSource}
+            onViewSource={handleViewSource}
             onPdfDragStateChange={setIsDraggingPdf}
           />
         </section>

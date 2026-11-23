@@ -19,9 +19,15 @@ export type Source = {
   name: string;
   preview: string;
   enabled: boolean;
+  filePath: string | null;
+  fileSize: number;
   pages?: number;
   status?: "reading" | "indexing";
   progress?: { start: number; end: number; total: number };
+  savingOriginal?: boolean;
+  originalNotSaved?: boolean;
+  originalSaveError?: string;
+  viewError?: string;
   error?: string;
   errorDetail?: string;
   retryable?: boolean;
@@ -41,6 +47,7 @@ type Props = {
   onRetrySource: (id: string) => void;
   onToggleSource: (id: string, enabled: boolean) => void;
   onRemoveSource: (id: string) => void;
+  onViewSource: (id: string) => void;
   onPdfDragStateChange: (dragging: boolean) => void;
 };
 
@@ -72,6 +79,7 @@ export default function Workspace({
   onRetrySource,
   onToggleSource,
   onRemoveSource,
+  onViewSource,
   onPdfDragStateChange,
 }: Props) {
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
@@ -291,7 +299,34 @@ export default function Workspace({
                           {(source.pages ?? 0) === 1 ? "page" : "pages"}
                         </p>
                       )}
+                      {source.savingOriginal && (
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          Saving original...
+                        </p>
+                      )}
+                      {source.originalNotSaved && (
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          Original not saved
+                          {source.originalSaveError
+                            ? `: ${source.originalSaveError}`
+                            : ""}
+                        </p>
+                      )}
+                      {source.viewError && (
+                        <p className="mt-1 text-xs text-[var(--bad)]">
+                          {source.viewError}
+                        </p>
+                      )}
                     </div>
+                    {source.filePath && (
+                      <button
+                        type="button"
+                        onClick={() => onViewSource(source.id)}
+                        className="shrink-0 text-xs font-semibold text-[var(--accent)] underline underline-offset-2"
+                      >
+                        View
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onRemoveSource(source.id)}

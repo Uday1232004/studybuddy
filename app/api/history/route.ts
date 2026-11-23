@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Please send a valid chat." }, { status: 400 });
   }
 
-  const result = validateHistoryPayload(body);
+  const result = validateHistoryPayload(body, userId);
   if (!result.payload) {
     return Response.json({ error: result.error }, { status: 400 });
   }
