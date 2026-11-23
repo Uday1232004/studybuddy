@@ -3,26 +3,34 @@
 import {
   type ChangeEvent,
   type DragEvent,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import ChatPanel from "./ChatPanel";
+import ChatPanel, {
+  type ChatMessage,
+  type ChatRestoreSession,
+} from "./ChatPanel";
 
 export type Source = {
   id: string;
   type: "pdf" | "text";
   name: string;
-  text: string;
+  preview: string;
   enabled: boolean;
   pages?: number;
-  loading?: boolean;
+  status?: "reading" | "indexing";
+  progress?: { start: number; end: number; total: number };
   error?: string;
-  truncated?: boolean;
+  errorDetail?: string;
+  retryable?: boolean;
 };
 
 type Props = {
-  notes: string;
+  restoreSession: ChatRestoreSession;
+  onMessagesChange: (messages: ChatMessage[]) => void;
+  onAssistantReply: (messages: ChatMessage[]) => void;
   sources: Source[];
   sourceMessage: string;
   uploadingPdf: boolean;
@@ -30,13 +38,13 @@ type Props = {
   onPdfFileSelect: (file: File) => void;
   onAddPdfFiles: (files: File[]) => void;
   onAddTextSource: (name: string, text: string) => boolean;
+  onRetrySource: (id: string) => void;
   onToggleSource: (id: string, enabled: boolean) => void;
   onRemoveSource: (id: string) => void;
   onPdfDragStateChange: (dragging: boolean) => void;
 };
 
-const MAX_SOURCES = 6;
-const MAX_NOTES = 20000;
+const MAX_SOURCES = 20;
 const MOBILE_QUERY = "(max-width: 1023px)";
 
 function subscribeToMobileChanges(callback: () => void) {
@@ -51,7 +59,9 @@ function getIsMobile() {
 }
 
 export default function Workspace({
-  notes,
+  restoreSession,
+  onMessagesChange,
+  onAssistantReply,
   sources,
   sourceMessage,
   uploadingPdf,
@@ -59,6 +69,7 @@ export default function Workspace({
   onPdfFileSelect,
   onAddPdfFiles,
   onAddTextSource,
+  onRetrySource,
   onToggleSource,
   onRemoveSource,
   onPdfDragStateChange,
@@ -76,15 +87,21 @@ export default function Workspace({
   );
   const sourcesExpanded =
     expandedOverride ?? (sources.length === 0 || !isMobile);
-
-  const usedCharacters = notes.length;
-  const overBudget = usedCharacters > MAX_NOTES;
-  const usagePercent = Math.min((usedCharacters / MAX_NOTES) * 100, 100);
-  const meterColor = overBudget
-    ? "bg-[var(--bad)]"
-    : usedCharacters > MAX_NOTES * 0.8
-      ? "bg-amber-500"
-      : "bg-[var(--accent)]";
+  const sourceIds = useMemo(
+    () =>
+      sources
+        .filter(
+          (source) =>
+            source.enabled && !source.status && !source.error
+        )
+        .map((source) => source.id),
+    [sources]
+  );
+  const indexedPages = sources.reduce(
+    (total, source) =>
+      source.status || source.error ? total : total + (source.pages ?? 0),
+    0
+  );
 
   function handleDragEnter(event: DragEvent<HTMLElement>) {
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -233,28 +250,52 @@ export default function Workspace({
                       <p className="truncate text-sm font-medium text-[var(--text)]">
                         {source.name}
                       </p>
-                      {source.loading ? (
+                      {source.status === "reading" ? (
                         <p className="truncate text-xs text-[var(--muted)]">
-                          Reading {source.name}...
+                          {source.progress?.total
+                            ? `Reading page ${Math.max(source.progress.start, 1)} of ${source.progress.total}`
+                            : `Reading ${source.name}...`}
+                        </p>
+                      ) : source.status === "indexing" ? (
+                        <p className="text-xs text-[var(--muted)]">
+                          Indexing pages {source.progress?.start ?? 1}-
+                          {source.progress?.end ?? 1} of{" "}
+                          {source.progress?.total ?? 0} (waiting for the
+                          free-tier speed limit...)
                         </p>
                       ) : source.error ? (
-                        <p className="truncate text-xs text-[var(--bad)]">
-                          {source.error}
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="min-w-0 truncate text-xs text-[var(--bad)]">
+                              {source.error}
+                            </p>
+                            {source.retryable && (
+                              <button
+                                type="button"
+                                onClick={() => onRetrySource(source.id)}
+                                className="shrink-0 text-xs font-semibold text-[var(--bad)] underline underline-offset-2"
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                          {source.errorDetail && (
+                            <p className="mt-1 truncate text-xs text-[var(--muted)]">
+                              {source.errorDetail}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <p className="text-xs text-[var(--muted)]">
-                          {source.type === "pdf"
-                            ? `${source.pages ?? 0} ${
-                                source.pages === 1 ? "page" : "pages"
-                              }`
-                            : `${source.text.length} characters`}
+                          {source.pages ?? 0}{" "}
+                          {(source.pages ?? 0) === 1 ? "page" : "pages"}
                         </p>
                       )}
                     </div>
                     <button
                       type="button"
                       onClick={() => onRemoveSource(source.id)}
-                      aria-label={`Remove ${source.name}`}
+                      aria-label={`${source.status ? "Cancel" : "Remove"} ${source.name}`}
                       className="grid size-8 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                     >
                       <svg
@@ -280,28 +321,10 @@ export default function Workspace({
             )}
 
             <div className="mt-4 flex items-center justify-between gap-3">
-              <div className="flex-1">
-                <div
-                  className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-hover)]"
-                  role="progressbar"
-                  aria-label="Source text usage"
-                  aria-valuemin={0}
-                  aria-valuemax={MAX_NOTES}
-                  aria-valuenow={Math.min(usedCharacters, MAX_NOTES)}
-                >
-                  <div
-                    className={`h-full rounded-full transition-all ${meterColor}`}
-                    style={{ width: `${usagePercent}%` }}
-                  />
-                </div>
-                <p
-                  className={`mt-1.5 text-xs ${
-                    overBudget ? "text-[var(--bad)]" : "text-[var(--muted)]"
-                  }`}
-                >
-                  {usedCharacters.toLocaleString()} / 20,000 characters used
-                </p>
-              </div>
+              <p className="min-w-0 flex-1 text-xs text-[var(--muted)]">
+                {sources.length} {sources.length === 1 ? "source" : "sources"},{" "}
+                {indexedPages} pages indexed
+              </p>
               <div className="relative shrink-0">
                 <button
                   type="button"
@@ -336,12 +359,6 @@ export default function Workspace({
                 )}
               </div>
             </div>
-
-            {overBudget && (
-              <p className="mt-3 text-sm text-[var(--bad)]" role="alert">
-                Too much text selected. Switch off a source or remove one.
-              </p>
-            )}
 
             {pasteOpen && (
               <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3">
@@ -386,7 +403,10 @@ export default function Workspace({
       </section>
 
       <ChatPanel
-        notes={notes}
+        sourceIds={sourceIds}
+        restoreSession={restoreSession}
+        onMessagesChange={onMessagesChange}
+        onAssistantReply={onAssistantReply}
         onPdfFileSelect={onPdfFileSelect}
         uploadingPdf={uploadingPdf}
         onDismissPdf={dismissComposerPdf}

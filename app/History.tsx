@@ -5,15 +5,25 @@ import { createClient } from "../lib/supabase/client";
 
 export type SavedKit = {
   id: string;
+  title: string | null;
   notes: string;
-  summary: string[];
-  quiz: {
-    question: string;
-    options: string[];
-    answerIndex: number;
-    explanation: string;
-  }[];
+  sources?: SavedSource[];
+  messages?: SavedMessage[];
   created_at: string;
+  updated_at?: string;
+};
+
+export type SavedSource = {
+  name: string;
+  type: "pdf" | "text";
+  text: string;
+  enabled: boolean;
+  pages?: number;
+};
+
+export type SavedMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 type Props = {
@@ -27,11 +37,38 @@ type Confirmation =
   | null;
 
 function getTitle(kit: SavedKit) {
+  const savedTitle = kit.title?.trim();
+  if (savedTitle) return savedTitle;
+
   const firstLine = kit.notes
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   return firstLine ? firstLine.slice(0, 60) : "Untitled notes";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSavedSource(value: unknown): value is SavedSource {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    (value.type === "pdf" || value.type === "text") &&
+    typeof value.text === "string" &&
+    typeof value.enabled === "boolean" &&
+    (value.pages === undefined ||
+      (typeof value.pages === "number" && Number.isFinite(value.pages)))
+  );
+}
+
+function isSavedMessage(value: unknown): value is SavedMessage {
+  return (
+    isRecord(value) &&
+    (value.role === "user" || value.role === "assistant") &&
+    typeof value.content === "string"
+  );
 }
 
 async function getErrorMessage(response: Response, fallback: string) {
@@ -64,15 +101,16 @@ export default function History({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("study_kits")
-        .select("id, notes, summary, quiz, created_at")
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .select("id, title, notes, created_at, updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(30);
 
       if (error) {
         console.error("Could not load study history:", {
@@ -91,6 +129,52 @@ export default function History({
     }
     load();
   }, [refreshKey]);
+
+  async function openItem(kit: SavedKit) {
+    setOpeningId(kit.id);
+    setActionError("");
+    try {
+      const response = await fetch(
+        `/api/history/${encodeURIComponent(kit.id)}`
+      );
+      if (!response.ok) {
+        setActionError(
+          await getErrorMessage(response, "Could not open this chat.")
+        );
+        return;
+      }
+
+      const data: unknown = await response.json();
+      if (
+        !isRecord(data) ||
+        typeof data.id !== "string" ||
+        typeof data.notes !== "string" ||
+        !(typeof data.title === "string" || data.title === null) ||
+        !Array.isArray(data.sources) ||
+        !data.sources.every(isSavedSource) ||
+        !Array.isArray(data.messages) ||
+        !data.messages.every(isSavedMessage)
+      ) {
+        setActionError("Could not open this chat. Please try again.");
+        return;
+      }
+
+      setSelectedId(kit.id);
+      onSelect({
+        id: data.id,
+        title: data.title,
+        notes: data.notes,
+        sources: data.sources,
+        messages: data.messages,
+        created_at: kit.created_at,
+        updated_at: kit.updated_at,
+      });
+    } catch {
+      setActionError("Could not open this chat. Please try again.");
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   async function deleteItem(id: string) {
     setBusyAction(`delete:${id}`);
@@ -151,10 +235,8 @@ export default function History({
               <div className="group flex items-stretch gap-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedId(kit.id);
-                    onSelect(kit);
-                  }}
+                  onClick={() => void openItem(kit)}
+                  disabled={openingId === kit.id}
                   className={`min-w-0 flex-1 rounded-r-xl border-y border-r px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
                     selectedId === kit.id
                       ? "border-l-2 border-l-[var(--accent)] bg-[var(--surface)]"
@@ -162,7 +244,7 @@ export default function History({
                   }`}
                 >
                   <span className="block truncate text-sm">
-                    {getTitle(kit)}
+                    {openingId === kit.id ? "Opening..." : getTitle(kit)}
                   </span>
                   <span className="mt-1 block text-xs text-[var(--muted)]">
                     {new Date(kit.created_at).toLocaleDateString()}

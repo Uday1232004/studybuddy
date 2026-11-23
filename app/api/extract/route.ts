@@ -1,8 +1,16 @@
 import { extractText, getDocumentProxy } from "unpdf";
 import { createClient } from "../../../lib/supabase/server";
 
-const MAX_BYTES = 4 * 1024 * 1024;
-const MAX_CHARS = 20000;
+const MAX_BYTES = 150 * 1024 * 1024;
+const MAX_PAGES = 2000;
+
+function cleanPage(text: string) {
+  return text
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -27,7 +35,7 @@ export async function POST(request: Request) {
   }
   if (file.size > MAX_BYTES) {
     return Response.json(
-      { error: "That PDF is too large. Please use a file under 4 MB." },
+      { error: "That PDF is too large. Please use a file under 150 MB." },
       { status: 413 }
     );
   }
@@ -40,15 +48,17 @@ export async function POST(request: Request) {
 
   try {
     const pdf = await getDocumentProxy(bytes);
-    const { totalPages, text } = await extractText(pdf, { mergePages: true });
-    const raw = Array.isArray(text) ? text.join("\n\n") : text;
-    const cleaned = raw
-      .replace(/\r/g, "")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+    const { totalPages, text } = await extractText(pdf);
+    if (totalPages > MAX_PAGES) {
+      return Response.json(
+        { error: "This PDF has more than 2,000 pages. Please use a shorter PDF." },
+        { status: 413 }
+      );
+    }
 
-    if (cleaned.length < 20) {
+    const pages = (Array.isArray(text) ? text : [text]).map(cleanPage);
+    const characterCount = pages.reduce((total, page) => total + page.length, 0);
+    if (characterCount < 20) {
       return Response.json(
         {
           error:
@@ -58,11 +68,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const truncated = cleaned.length > MAX_CHARS;
+    const combinedText = pages.join("\n\n");
     return Response.json({
-      text: truncated ? cleaned.slice(0, MAX_CHARS) : cleaned,
-      pages: totalPages,
-      truncated,
+      text: combinedText.slice(0, 20000),
+      pages,
+      pageCount: totalPages,
     });
   } catch (error) {
     console.error("PDF extract error:", error);

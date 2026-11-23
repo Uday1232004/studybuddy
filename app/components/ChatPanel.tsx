@@ -2,7 +2,9 @@
 
 import {
   type ChangeEvent,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -10,14 +12,22 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-type ChatMessage = {
+export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   hidden?: boolean;
 };
 
+export type ChatRestoreSession = {
+  key: number;
+  messages: ChatMessage[];
+};
+
 type Props = {
-  notes: string;
+  sourceIds: string[];
+  restoreSession: ChatRestoreSession;
+  onMessagesChange: (messages: ChatMessage[]) => void;
+  onAssistantReply: (messages: ChatMessage[]) => void;
   onPdfFileSelect: (file: File) => void;
   pdfFileName?: string;
   uploadingPdf: boolean;
@@ -100,14 +110,16 @@ function getError(data: unknown): { message: string; detail: string } {
 }
 
 export default function ChatPanel({
-  notes,
+  sourceIds,
+  restoreSession,
+  onMessagesChange,
+  onAssistantReply,
   onPdfFileSelect,
   pdfFileName,
   uploadingPdf,
   onDismissPdf,
 }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [activeNotes, setActiveNotes] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [readingMaterial, setReadingMaterial] = useState(false);
@@ -128,16 +140,33 @@ export default function ChatPanel({
   const speechFinalRef = useRef("");
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechLanguageRef = useRef(speechLanguage);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const restoreKeyRef = useRef(restoreSession.key);
+  const sessionKeyRef = useRef(restoreSession.key);
+  const lessonStartedRef = useRef(false);
+  const sendControllerRef = useRef<AbortController | null>(null);
   const speechSupported = useSyncExternalStore(
     subscribeToSpeechSupport,
     hasSpeechSupport,
     () => false
   );
 
-  const visibleMessages =
-    activeNotes === notes
-      ? messages.filter((message) => !message.hidden)
-      : [];
+  useLayoutEffect(() => {
+    sessionKeyRef.current = restoreSession.key;
+    sendControllerRef.current?.abort();
+    sendControllerRef.current = null;
+  }, [restoreSession.key]);
+
+  const replaceMessages = useCallback(
+    (nextMessages: ChatMessage[]) => {
+      messagesRef.current = nextMessages;
+      setMessages(nextMessages);
+      onMessagesChange(nextMessages);
+    },
+    [onMessagesChange]
+  );
+
+  const visibleMessages = messages.filter((message) => !message.hidden);
   const hasTeacherReply = visibleMessages.some(
     (message) => message.role === "assistant"
   );
@@ -171,6 +200,7 @@ export default function ChatPanel({
 
   useEffect(
     () => () => {
+      sendControllerRef.current?.abort();
       shouldListenRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       const recognition = recognitionRef.current;
@@ -190,20 +220,54 @@ export default function ChatPanel({
   );
 
   useEffect(() => {
-    const controller = new AbortController();
+    let lessonTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    if (notes.trim() === "") {
-      return () => controller.abort();
+    const isNewRestore = restoreKeyRef.current !== restoreSession.key;
+    if (isNewRestore) {
+      restoreKeyRef.current = restoreSession.key;
+      lessonStartedRef.current = false;
+      replaceMessages(restoreSession.messages);
+      setInput("");
+      setError("");
+      setErrorDetail("");
+      setLoading(false);
+      setReadingMaterial(false);
+
+      if (restoreSession.messages.length > 0) {
+        return () => {};
+      }
     }
 
-    const timeout = setTimeout(async () => {
+    if (sourceIds.length === 0 || lessonStartedRef.current) {
+      setReadingMaterial(false);
+      return () => {
+        if (lessonTimeout) clearTimeout(lessonTimeout);
+      };
+    }
+
+    const hasVisibleMessages = messagesRef.current.some(
+      (message) => !message.hidden
+    );
+    const hasStarterInProgress = messagesRef.current.some(
+      (message) => message.hidden && message.content === "START_LESSON"
+    );
+    if (hasVisibleMessages || hasStarterInProgress) {
+      return () => {
+        if (lessonTimeout) clearTimeout(lessonTimeout);
+      };
+    }
+
+    lessonTimeout = setTimeout(async () => {
+      lessonStartedRef.current = true;
+      const sessionKey = sessionKeyRef.current;
+      const controller = new AbortController();
+      sendControllerRef.current = controller;
       const starterMessage: ChatMessage = {
         role: "user",
         content: "START_LESSON",
         hidden: true,
       };
-      setActiveNotes(notes);
-      setMessages([starterMessage]);
+      replaceMessages([starterMessage]);
       setInput("");
       setError("");
       setErrorDetail("");
@@ -215,12 +279,13 @@ export default function ChatPanel({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            notes,
+            sourceIds,
             messages: [{ role: "user", content: "START_LESSON" }],
           }),
           signal: controller.signal,
         });
         const data: unknown = await response.json();
+        if (sessionKey !== sessionKeyRef.current) return;
 
         if (!response.ok) {
           const result = getError(data);
@@ -233,27 +298,37 @@ export default function ChatPanel({
           return;
         }
 
-        setMessages([
+        const completedMessages: ChatMessage[] = [
           starterMessage,
           { role: "assistant", content: data.reply },
-        ]);
+        ];
+        replaceMessages(completedMessages);
+        onAssistantReply(completedMessages);
       } catch {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && sessionKey === sessionKeyRef.current) {
           setError("The teacher could not answer. Try again.");
         }
       } finally {
-        if (!controller.signal.aborted) {
+        if (sessionKey === sessionKeyRef.current) {
           setLoading(false);
           setReadingMaterial(false);
+          if (sendControllerRef.current === controller) {
+            sendControllerRef.current = null;
+          }
         }
       }
     }, 1000);
 
     return () => {
-      clearTimeout(timeout);
-      controller.abort();
+      if (lessonTimeout) clearTimeout(lessonTimeout);
     };
-  }, [notes]);
+  }, [
+    sourceIds,
+    onAssistantReply,
+    replaceMessages,
+    restoreSession.key,
+    restoreSession.messages,
+  ]);
 
   function stopSpeechRecognition() {
     shouldListenRef.current = false;
@@ -396,16 +471,18 @@ export default function ChatPanel({
     if (
       content === "" ||
       loading ||
-      notes.trim() === "" ||
-      activeNotes !== notes
+      sourceIds.length === 0
     ) {
       return;
     }
 
     stopSpeechRecognition();
+    const sessionKey = sessionKeyRef.current;
+    const controller = new AbortController();
+    sendControllerRef.current = controller;
     const studentMessage: ChatMessage = { role: "user", content };
     const updatedMessages = [...messages, studentMessage];
-    setMessages(updatedMessages);
+    replaceMessages(updatedMessages);
     setInput("");
     setError("");
     setErrorDetail("");
@@ -417,14 +494,16 @@ export default function ChatPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          notes,
+          sourceIds,
           messages: updatedMessages.map(({ role, content: messageContent }) => ({
             role,
             content: messageContent,
           })),
         }),
+        signal: controller.signal,
       });
       const data: unknown = await response.json();
+      if (sessionKey !== sessionKeyRef.current) return;
 
       if (!response.ok) {
         const result = getError(data);
@@ -437,14 +516,23 @@ export default function ChatPanel({
         return;
       }
 
-      setMessages([
+      const completedMessages: ChatMessage[] = [
         ...updatedMessages,
         { role: "assistant", content: data.reply },
-      ]);
+      ];
+      replaceMessages(completedMessages);
+      onAssistantReply(completedMessages);
     } catch {
-      setError("The teacher could not answer. Try again.");
+      if (!controller.signal.aborted && sessionKey === sessionKeyRef.current) {
+        setError("The teacher could not answer. Try again.");
+      }
     } finally {
-      setLoading(false);
+      if (sessionKey === sessionKeyRef.current) {
+        setLoading(false);
+        if (sendControllerRef.current === controller) {
+          sendControllerRef.current = null;
+        }
+      }
     }
   }
 
@@ -460,13 +548,11 @@ export default function ChatPanel({
         {visibleMessages.length === 0 ? (
           <div className="flex min-h-full items-center justify-center py-6 text-center">
             <p className="max-w-md text-base leading-7 text-[var(--muted)]">
-              {notes.trim() === ""
-                ? "Upload a PDF or paste notes, and your teacher will get ready."
-                : activeNotes !== notes
-                  ? "Your teacher is getting ready..."
-                  : readingMaterial
-                    ? "Teacher is reading your material..."
-                    : "Your teacher is getting ready..."}
+              {sourceIds.length === 0
+                ? "Tick at least one source to start."
+                : readingMaterial
+                  ? "Teacher is reading your material..."
+                  : "Your teacher is getting ready..."}
             </p>
           </div>
         ) : (
@@ -794,8 +880,7 @@ export default function ChatPanel({
                   disabled={
                     loading ||
                     input.trim() === "" ||
-                    notes.trim() === "" ||
-                    activeNotes !== notes
+                    sourceIds.length === 0
                   }
                   aria-label="Send message"
                   className="grid size-10 place-items-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"

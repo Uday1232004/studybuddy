@@ -51,7 +51,7 @@ export default function PdfAttach({ uploading, onFileSelect }: Props) {
         {uploading ? "Reading PDF..." : "Attach PDF"}
       </button>
       <span className="pl-1 text-[10px] text-[var(--muted)]">
-        PDF up to 4 MB. Text-based PDFs only.
+        PDF up to 150 MB. Text-based PDFs only.
       </span>
     </div>
   );
