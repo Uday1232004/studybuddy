@@ -1,4 +1,4 @@
-import { askGemini } from "../../../lib/gemini";
+import { askLLM } from "../../../lib/llm";
 import { createClient } from "../../../lib/supabase/server";
 
 const MAX_POINT = 600;
@@ -75,7 +75,7 @@ NOTES:
 ${notes}`;
 
   try {
-    const text = await askGemini(prompt, true);
+    const text = await askLLM(prompt, true);
     const result = parseExplanation(text);
     if (!result) {
       console.error("Could not parse explanation:", text);

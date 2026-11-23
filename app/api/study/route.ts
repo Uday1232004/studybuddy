@@ -1,4 +1,4 @@
-import { askGemini } from "../../../lib/gemini";
+import { askLLM } from "../../../lib/llm";
 import { createClient } from "../../../lib/supabase/server";
 
 const MAX_CHARS = 20000;
@@ -90,7 +90,7 @@ NOTES:
 ${notes}`;
 
   try {
-    const text = await askGemini(prompt, true);
+    const text = await askLLM(prompt, true);
     const result = parseStudyResult(text);
 
     if (!result) {
