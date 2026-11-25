@@ -1,5 +1,6 @@
 import { createClient } from "../../../../lib/supabase/server";
 import { embedTexts } from "../../../../lib/embeddings";
+import { consumeUsage, limitMessage } from "../../../../lib/usage-limits";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const MAX_BATCH_PAGES = 10;
@@ -98,6 +99,26 @@ export async function POST(request: Request) {
     (startPage !== null && startPage + body.pages.length - 1 > MAX_FILE_PAGES)
   ) {
     return Response.json({ error: "Please send a valid source." }, { status: 400 });
+  }
+
+  if (body.first) {
+    const usage = await consumeUsage(supabase, "pdf_upload");
+    if (!usage.ok) {
+      if (usage.reason === "error") {
+        return Response.json(
+          { error: "Could not check your usage. Please try again." },
+          { status: 503 }
+        );
+      }
+      return Response.json(
+        {
+          error: limitMessage("pdf_upload", usage.retryAfterSeconds),
+          code: "RATE_LIMIT",
+          retryAfterSeconds: usage.retryAfterSeconds,
+        },
+        { status: 429 }
+      );
+    }
   }
 
   const pages = body.pages as string[];

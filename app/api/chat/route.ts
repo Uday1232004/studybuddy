@@ -6,6 +6,7 @@ import {
 } from "../../../lib/citations";
 import { buildChatPrompt } from "../../../lib/prompts";
 import { createClient } from "../../../lib/supabase/server";
+import { consumeUsage, limitMessage } from "../../../lib/usage-limits";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const MAX_SOURCE_IDS = 20;
@@ -365,10 +366,27 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-
   const lastStudentMessage = history[history.length - 1].content;
   const isStartingLesson = lastStudentMessage === "START_LESSON";
   const sourceIds = [...new Set(body.sourceIds as string[])];
+
+  const usage = await consumeUsage(supabase, "chat");
+  if (!usage.ok) {
+    if (usage.reason === "error") {
+      return Response.json(
+        { error: "Could not check your usage. Please try again." },
+        { status: 503 }
+      );
+    }
+    return Response.json(
+      {
+        error: limitMessage("chat", usage.retryAfterSeconds),
+        code: "RATE_LIMIT",
+        retryAfterSeconds: usage.retryAfterSeconds,
+      },
+      { status: 429 }
+    );
+  }
 
   try {
     let context = "";

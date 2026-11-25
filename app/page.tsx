@@ -955,11 +955,16 @@ export default function Home() {
             data = null;
           }
 
-          if (isRecord(data) && data.code === "DAILY_QUOTA") {
+          if (
+            isRecord(data) &&
+            (data.code === "DAILY_QUOTA" || data.code === "RATE_LIMIT")
+          ) {
             const message =
               typeof data.error === "string"
                 ? data.error
-                : DAILY_QUOTA_MESSAGE;
+                : data.code === "DAILY_QUOTA"
+                  ? DAILY_QUOTA_MESSAGE
+                  : "Daily PDF upload limit reached. Try again later.";
             stopIndexingForDailyQuota(id, message);
             return;
           }

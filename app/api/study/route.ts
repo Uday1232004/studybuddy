@@ -1,6 +1,7 @@
 import { askLLM } from "../../../lib/llm";
 import { buildTeacherPrompt } from "../../../lib/prompts";
 import { createClient } from "../../../lib/supabase/server";
+import { consumeUsage, limitMessage } from "../../../lib/usage-limits";
 
 const MAX_CHARS = 20000;
 
@@ -71,6 +72,24 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "Notes are too long. Please paste under 20,000 characters." },
       { status: 400 }
+    );
+  }
+
+  const usage = await consumeUsage(supabase, "study_kit");
+  if (!usage.ok) {
+    if (usage.reason === "error") {
+      return Response.json(
+        { error: "Could not check your usage. Please try again." },
+        { status: 503 }
+      );
+    }
+    return Response.json(
+      {
+        error: limitMessage("study_kit", usage.retryAfterSeconds),
+        code: "RATE_LIMIT",
+        retryAfterSeconds: usage.retryAfterSeconds,
+      },
+      { status: 429 }
     );
   }
 

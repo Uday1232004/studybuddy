@@ -7,6 +7,7 @@ import {
   validateAnalysis,
 } from "../../../../lib/analysis";
 import { createClient } from "../../../../lib/supabase/server";
+import { consumeUsage, limitMessage } from "../../../../lib/usage-limits";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const QUERY_PAGE_SIZE = 1000;
@@ -191,6 +192,24 @@ export async function POST(request: Request) {
     return Response.json(
       { error: "This PDF has no page text to scan." },
       { status: 422 }
+    );
+  }
+
+  const usage = await consumeUsage(supabase, "planner_scan");
+  if (!usage.ok) {
+    if (usage.reason === "error") {
+      return Response.json(
+        { error: "Could not check your usage. Please try again." },
+        { status: 503 }
+      );
+    }
+    return Response.json(
+      {
+        error: limitMessage("planner_scan", usage.retryAfterSeconds),
+        code: "RATE_LIMIT",
+        retryAfterSeconds: usage.retryAfterSeconds,
+      },
+      { status: 429 }
     );
   }
 

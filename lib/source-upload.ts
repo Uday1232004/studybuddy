@@ -134,12 +134,14 @@ export async function addPdfSource(
           typeof data === "object" &&
           data !== null &&
           "code" in data &&
-          data.code === "DAILY_QUOTA"
+          (data.code === "DAILY_QUOTA" || data.code === "RATE_LIMIT")
         ) {
           const message =
             "error" in data && typeof data.error === "string"
               ? data.error
-              : DAILY_QUOTA_MESSAGE;
+              : data.code === "DAILY_QUOTA"
+                ? DAILY_QUOTA_MESSAGE
+                : "Daily PDF upload limit reached. Try again later.";
           const quotaError = new Error(message);
           quotaError.name = "DailyQuotaError";
           throw quotaError;

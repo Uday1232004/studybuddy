@@ -1,5 +1,6 @@
 import { askLLM } from "../../../lib/llm";
 import { createClient } from "../../../lib/supabase/server";
+import { consumeUsage, limitMessage } from "../../../lib/usage-limits";
 
 const MAX_POINT = 600;
 const MAX_NOTES = 20000;
@@ -47,6 +48,24 @@ export async function POST(request: Request) {
   }
   if (notes.length > MAX_NOTES) {
     return Response.json({ error: "The notes are too long." }, { status: 400 });
+  }
+
+  const usage = await consumeUsage(supabase, "chat");
+  if (!usage.ok) {
+    if (usage.reason === "error") {
+      return Response.json(
+        { error: "Could not check your usage. Please try again." },
+        { status: 503 }
+      );
+    }
+    return Response.json(
+      {
+        error: limitMessage("chat", usage.retryAfterSeconds),
+        code: "RATE_LIMIT",
+        retryAfterSeconds: usage.retryAfterSeconds,
+      },
+      { status: 429 }
+    );
   }
 
   const style =
