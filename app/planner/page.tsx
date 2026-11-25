@@ -21,6 +21,16 @@ import {
   type UploadedPdfSource,
 } from "@/lib/source-upload";
 import { buildLearnUrl } from "@/lib/learn-link";
+import AppNav from "../components/AppNav";
+
+const FIELD_CLASS =
+  "min-h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]";
+const PRIMARY_BUTTON_CLASS =
+  "inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+const SECONDARY_BUTTON_CLASS =
+  "inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+const DESTRUCTIVE_BUTTON_CLASS =
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--bad)] bg-[var(--bad-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--bad)] transition-colors hover:bg-[var(--bad)] hover:text-[var(--on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:cursor-not-allowed disabled:opacity-60";
 
 type Exam = {
   id: string;
@@ -2191,30 +2201,28 @@ export default function PlannerPage() {
 
   if (loading) {
     return (
-      <main className="grid min-h-dvh place-items-center bg-[var(--bg)] text-[var(--text)]">
-        <p className="text-sm text-[var(--muted)]">Loading...</p>
-      </main>
+      <div className="min-h-dvh bg-[var(--bg)] text-[var(--text)]">
+        <AppNav />
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="grid min-h-[calc(100dvh-3.5rem)] place-items-center"
+        >
+          <p className="text-sm text-[var(--muted)]">Loading...</p>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--bg)] text-[var(--text)]">
-      <header className="flex h-14 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5">
-        <Link
-          href="/"
-          className="text-sm font-extrabold tracking-tight focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-        >
-          StudyBuddy
-        </Link>
-        <Link
-          href="/"
-          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-        >
-          Back to workspace
-        </Link>
-      </header>
-
-      <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
+    <>
+      <AppNav />
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="min-h-[calc(100dvh-3.5rem)] min-w-0 bg-[var(--bg)] text-[var(--text)]"
+      >
+      <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6 sm:px-6">
         <div>
           <p className="text-xs font-semibold tracking-[0.2em] text-[var(--accent)]">
             PLAN YOUR STUDY
@@ -2241,7 +2249,7 @@ export default function PlannerPage() {
           </p>
         )}
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Settings</h2>
           <div className="mt-4 grid gap-5 md:grid-cols-[220px_1fr]">
             <label className="block text-sm font-medium">
@@ -2258,7 +2266,7 @@ export default function PlannerPage() {
                     hoursPerDay: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               />
             </label>
             <fieldset>
@@ -2285,13 +2293,13 @@ export default function PlannerPage() {
             type="button"
             onClick={saveSettings}
             disabled={savingSettings}
-            className="mt-5 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+            className={`mt-5 ${PRIMARY_BUTTON_CLASS}`}
           >
             {savingSettings ? "Saving..." : "Save settings"}
           </button>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Subjects</h2>
           <form onSubmit={addExam} className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium sm:col-span-2">
@@ -2305,7 +2313,7 @@ export default function PlannerPage() {
                     subject: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               />
             </label>
             <label className="text-sm font-medium">
@@ -2320,7 +2328,7 @@ export default function PlannerPage() {
                     examDate: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               />
             </label>
             <label className="text-sm font-medium">
@@ -2337,7 +2345,7 @@ export default function PlannerPage() {
                     credits: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               />
             </label>
             <label className="text-sm font-medium">
@@ -2354,7 +2362,7 @@ export default function PlannerPage() {
                     difficulty: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               />
             </label>
             <label className="text-sm font-medium">
@@ -2367,7 +2375,7 @@ export default function PlannerPage() {
                     chatId: event.target.value,
                   }))
                 }
-                className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                className={`mt-2 ${FIELD_CLASS}`}
               >
                 <option value="">No chat linked</option>
                 {chats.map((chat) => (
@@ -2381,7 +2389,7 @@ export default function PlannerPage() {
               <button
                 type="submit"
                 disabled={addingExam}
-                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                className={PRIMARY_BUTTON_CLASS}
               >
                 {addingExam ? "Adding..." : "Add subject"}
               </button>
@@ -2416,7 +2424,7 @@ export default function PlannerPage() {
                   <button
                     type="button"
                     onClick={() => void deleteExam(exam)}
-                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)]"
+                    className={DESTRUCTIVE_BUTTON_CLASS}
                   >
                     Delete
                   </button>
@@ -2426,11 +2434,16 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Modules for your plan</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
             Linked chats provide one module per PDF when each page count is saved. Otherwise, add the modules by hand.
           </p>
+          {exams.length === 0 && (
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Add a subject above to see its modules here.
+            </p>
+          )}
           {allModulesMissing && (
             <p className="mt-3 text-sm text-[var(--muted)]">
               No modules yet. Link a chat with PDFs or enter module names and page counts below.
@@ -2468,7 +2481,7 @@ export default function PlannerPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="font-semibold">{exam.subject}</h3>
                     <label
-                      className={`cursor-pointer rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] ${
+                      className={`${SECONDARY_BUTTON_CLASS} cursor-pointer text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--accent)] ${
                         !canUploadMore ||
                         isRequestRunning ||
                         removePdfConfirmation !== null
@@ -2509,7 +2522,7 @@ export default function PlannerPage() {
                           {job.statusText}
                         </p>
                         {job.uploadWarning && (
-                          <p className="mt-1 text-amber-700">
+                          <p className="mt-1 text-[var(--accent)]">
                             {job.uploadWarning}
                           </p>
                         )}
@@ -2524,7 +2537,7 @@ export default function PlannerPage() {
                           <button
                             type="button"
                             onClick={() => cancelPdfUpload(job)}
-                            className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 hover:bg-[var(--surface-hover)]"
+                            className={`${SECONDARY_BUTTON_CLASS} min-h-9 px-3 text-xs`}
                           >
                             Cancel
                           </button>
@@ -2534,7 +2547,7 @@ export default function PlannerPage() {
                             type="button"
                             onClick={() => retryPdfUpload(job)}
                             disabled={isRequestRunning}
-                            className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                            className={`${SECONDARY_BUTTON_CLASS} min-h-9 px-3 text-xs`}
                           >
                             Retry
                           </button>
@@ -2566,7 +2579,7 @@ export default function PlannerPage() {
                                   event.target.value
                                 )
                               }
-                              className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                              className={FIELD_CLASS}
                             />
                             <input
                               aria-label={`${exam.subject} page count`}
@@ -2583,14 +2596,14 @@ export default function PlannerPage() {
                                   event.target.value
                                 )
                               }
-                              className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                              className={FIELD_CLASS}
                             />
                             <button
                               type="button"
                               onClick={() =>
                                 removeManualModule(exam.id, index)
                               }
-                              className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs hover:bg-[var(--surface-hover)]"
+                              className={DESTRUCTIVE_BUTTON_CLASS}
                             >
                               Remove
                             </button>
@@ -2601,7 +2614,7 @@ export default function PlannerPage() {
                     <button
                       type="button"
                       onClick={() => addManualModule(exam.id)}
-                      className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)]"
+                      className={`mt-3 ${SECONDARY_BUTTON_CLASS}`}
                     >
                       Add module
                     </button>
@@ -2649,7 +2662,7 @@ export default function PlannerPage() {
                               type="button"
                               onClick={() => void scanModule(exam.id, module)}
                               disabled={scanning}
-                              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                              className={`${SECONDARY_BUTTON_CLASS} min-h-9 px-3 text-xs`}
                             >
                               {scanning
                                 ? `Reading ${module.pages} pages...`
@@ -2667,7 +2680,7 @@ export default function PlannerPage() {
                                       })
                                     }
                                     disabled={isRequestRunning}
-                                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                                    className={`${DESTRUCTIVE_BUTTON_CLASS} min-h-9`}
                                   >
                                     Remove PDF
                                   </button>
@@ -2683,7 +2696,7 @@ export default function PlannerPage() {
                                       type="button"
                                       onClick={() => setRemovePdfConfirmation(null)}
                                       disabled={removingPdfId !== null}
-                                      className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                                      className={`${SECONDARY_BUTTON_CLASS} min-h-9 px-3 text-xs`}
                                     >
                                       Cancel
                                     </button>
@@ -2693,7 +2706,7 @@ export default function PlannerPage() {
                                         void removePdfFromSubject(exam, moduleSource)
                                       }
                                       disabled={isRequestRunning}
-                                      className="rounded-lg bg-[var(--bad)] px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                                      className={DESTRUCTIVE_BUTTON_CLASS}
                                     >
                                       {removingPdfId === moduleSource.id
                                         ? "Removing..."
@@ -2718,7 +2731,7 @@ export default function PlannerPage() {
                           {analysis && (
                             <div className="mt-3 rounded-lg bg-[var(--bg)] p-3">
                               {outOfDate && (
-                                <p className="mb-2 text-xs font-semibold text-amber-700">
+                                <p className="mb-2 text-xs font-semibold text-[var(--accent)]">
                                   Out of date, scan again.
                                 </p>
                               )}
@@ -2726,16 +2739,16 @@ export default function PlannerPage() {
                               <p className="mt-1 text-xs text-[var(--muted)]">
                                 AI difficulty guess: {analysis.overall_difficulty}/5
                               </p>
-                              <div className="mt-3 overflow-x-auto">
+                              <div className="mt-3 max-h-80 min-w-0 max-w-full overflow-auto rounded-lg">
                                 <table className="w-full min-w-[560px] text-left text-xs">
                                   <thead className="text-[var(--muted)]">
                                     <tr>
-                                      <th className="py-2 pr-3">#</th>
-                                      <th className="py-2 pr-3">Topic</th>
-                                      <th className="py-2 pr-3">Pages</th>
-                                      <th className="py-2 pr-3">Difficulty</th>
-                                      <th className="py-2">Why</th>
-                                      <th className="py-2">Study</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2 pr-3">#</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2 pr-3">Topic</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2 pr-3">Pages</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2 pr-3">Difficulty</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2 pr-3">Why</th>
+                                      <th className="sticky top-0 z-10 bg-[var(--surface)] py-2">Study</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -2756,7 +2769,7 @@ export default function PlannerPage() {
                                       return (
                                         <tr
                                           key={`${topic.priority}-${topicIndex}`}
-                                          className="border-t border-[var(--border)] align-top"
+                                          className="border-t border-[var(--border)] odd:bg-[var(--bg)] even:bg-[var(--surface)] align-top transition-colors hover:bg-[var(--surface-hover)]"
                                         >
                                           <td className="py-2 pr-3">
                                             {topic.priority}
@@ -2765,7 +2778,7 @@ export default function PlannerPage() {
                                             {studyHref ? (
                                               <Link
                                                 href={studyHref}
-                                                className="hover:underline"
+                                                className="hover:underline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                                               >
                                                 {topic.title}
                                               </Link>
@@ -2789,7 +2802,7 @@ export default function PlannerPage() {
                                                   Number(event.target.value)
                                                 )
                                               }
-                                              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                                              className="min-h-8 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
                                             >
                                               {[1, 2, 3, 4, 5].map((level) => (
                                                 <option key={level} value={level}>
@@ -2804,7 +2817,7 @@ export default function PlannerPage() {
                                               <Link
                                                 href={studyHref}
                                                 aria-label={`Study ${topic.title}`}
-                                                className="inline-flex rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-[var(--on-accent)]"
+                                                className="inline-flex min-h-8 items-center rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                                               >
                                                 Study this
                                               </Link>
@@ -2832,7 +2845,7 @@ export default function PlannerPage() {
                                   !dirtyAnalysisIds.has(analysis.id) ||
                                   savingAnalysisIds.has(analysis.id)
                                 }
-                                className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                                className={`mt-3 ${SECONDARY_BUTTON_CLASS}`}
                               >
                                 {savingAnalysisIds.has(analysis.id)
                                   ? "Saving..."
@@ -2851,7 +2864,7 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold">
@@ -2876,7 +2889,7 @@ export default function PlannerPage() {
                   value={planName}
                   onChange={(event) => setPlanName(event.target.value)}
                   placeholder="Plan from today"
-                  className="mt-1 block w-full min-w-48 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                  className={`mt-1 block min-w-48 ${FIELD_CLASS}`}
                 />
               </label>
               <button
@@ -2885,7 +2898,7 @@ export default function PlannerPage() {
                 disabled={
                   isRequestRunning || exams.length === 0 || !plansLoaded
                 }
-                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                className={PRIMARY_BUTTON_CLASS}
               >
                 {buildingPlan ? "Building..." : "Build my plan"}
               </button>
@@ -2905,7 +2918,7 @@ export default function PlannerPage() {
                   setViewPlanId(null);
                   setViewPlanTasks([]);
                 }}
-                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+                className={SECONDARY_BUTTON_CLASS}
               >
                 Back to my active plan
               </button>
@@ -2921,7 +2934,7 @@ export default function PlannerPage() {
           )}
 
           {warnings.length > 0 && (
-            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            <div className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--accent)]/5 p-3 text-sm text-[var(--text)]">
               <p className="font-semibold">Plan notes</p>
               <ul className="mt-1 list-disc space-y-1 pl-5">
                 {warnings.map((warning, index) => (
@@ -2954,7 +2967,7 @@ export default function PlannerPage() {
                   topic: nextTaskTopic,
                   taskId: String(nextTask.id),
                 })}
-                className="mt-4 inline-flex flex-col rounded-xl bg-[var(--accent)] px-4 py-2 font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
+                className={`mt-4 inline-flex min-h-12 flex-col items-start justify-center ${PRIMARY_BUTTON_CLASS}`}
               >
                 <span>Start next task</span>
                 <span className="text-xs font-normal text-[var(--muted)]">
@@ -3022,7 +3035,7 @@ export default function PlannerPage() {
                       return (
                         <div
                           key={taskKey}
-                          className={`flex items-start gap-3 rounded-xl border border-[var(--border)] p-3 ${
+                          className={`flex min-h-11 items-center gap-3 rounded-xl border border-[var(--border)] p-3 transition-colors hover:bg-[var(--surface-hover)] ${
                             task.done ? "text-[var(--muted)]" : ""
                           }`}
                         >
@@ -3038,7 +3051,7 @@ export default function PlannerPage() {
                             onChange={(event) =>
                               void toggleTask(task, event.target.checked)
                             }
-                            className="mt-1 accent-[var(--accent)]"
+                            className="size-5 shrink-0 accent-[var(--accent)]"
                           />
                           <span className="min-w-0 flex-1">
                             <span
@@ -3049,7 +3062,7 @@ export default function PlannerPage() {
                               {taskLearnUrl ? (
                                 <Link
                                   href={taskLearnUrl}
-                                  className="hover:underline"
+                                  className="hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                                 >
                                   {task.title}
                                 </Link>
@@ -3065,7 +3078,7 @@ export default function PlannerPage() {
                               {taskLearnUrl ? (
                                 <Link
                                   href={taskLearnUrl}
-                                  className="rounded-lg border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--accent)] hover:bg-[var(--surface-hover)]"
+                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                                 >
                                   {task.done ? "Review" : "Learn"}
                                 </Link>
@@ -3086,7 +3099,7 @@ export default function PlannerPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
+        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Plan history</h2>
           {plans.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--muted)]">
@@ -3132,7 +3145,7 @@ export default function PlannerPage() {
                               }
                             }}
                             aria-label="Plan name"
-                            className="w-full max-w-md rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm"
+                            className={`max-w-md ${FIELD_CLASS}`}
                           />
                         ) : (
                           <p className="break-words font-semibold">
@@ -3161,7 +3174,7 @@ export default function PlannerPage() {
                           type="button"
                           onClick={() => void viewSavedPlan(plan)}
                           disabled={isRequestRunning}
-                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          className={SECONDARY_BUTTON_CLASS}
                         >
                           View
                         </button>
@@ -3170,7 +3183,7 @@ export default function PlannerPage() {
                             type="button"
                             onClick={() => void makePlanActive(plan)}
                             disabled={isRequestRunning}
-                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                            className={SECONDARY_BUTTON_CLASS}
                           >
                             Make active
                           </button>
@@ -3180,7 +3193,7 @@ export default function PlannerPage() {
                             type="button"
                             onClick={() => startPlanRename(plan)}
                             disabled={isRequestRunning}
-                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                            className={SECONDARY_BUTTON_CLASS}
                           >
                             Rename
                           </button>
@@ -3189,7 +3202,7 @@ export default function PlannerPage() {
                           type="button"
                           onClick={() => setDeleteConfirmPlanId(plan.id)}
                           disabled={isRequestRunning}
-                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                          className={DESTRUCTIVE_BUTTON_CLASS}
                         >
                           Delete
                         </button>
@@ -3206,7 +3219,7 @@ export default function PlannerPage() {
                             type="button"
                             onClick={() => setDeleteConfirmPlanId(null)}
                             disabled={isRequestRunning}
-                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                            className={SECONDARY_BUTTON_CLASS}
                           >
                             Cancel
                           </button>
@@ -3214,7 +3227,7 @@ export default function PlannerPage() {
                             type="button"
                             onClick={() => void deletePlan(plan)}
                             disabled={isRequestRunning}
-                            className="rounded-lg bg-[var(--bad)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                            className={DESTRUCTIVE_BUTTON_CLASS}
                           >
                             Delete plan
                           </button>
@@ -3228,6 +3241,7 @@ export default function PlannerPage() {
           )}
         </section>
       </div>
-    </main>
+      </main>
+    </>
   );
 }

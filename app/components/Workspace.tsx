@@ -54,6 +54,10 @@ type Props = {
 
 const MAX_SOURCES = 20;
 const MOBILE_QUERY = "(max-width: 1023px)";
+const PRIMARY_BUTTON_CLASS =
+  "inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+const SECONDARY_BUTTON_CLASS =
+  "inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 
 function subscribeToMobileChanges(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -173,7 +177,7 @@ export default function Workspace({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8 sm:py-8">
+    <div className="mx-auto w-full max-w-4xl min-w-0 space-y-5 px-4 py-5 sm:px-6 sm:py-6">
       <section
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -198,7 +202,7 @@ export default function Workspace({
           type="button"
           onClick={() => setExpandedOverride(!sourcesExpanded)}
           aria-expanded={sourcesExpanded}
-          className="flex w-full items-center justify-between gap-3 text-left"
+          className="flex min-h-11 w-full items-center justify-between gap-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           <span className="text-lg font-bold">Sources</span>
           <span className="flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -292,7 +296,7 @@ export default function Workspace({
                               <button
                                 type="button"
                                 onClick={() => onRetrySource(source.id)}
-                                className="shrink-0 text-xs font-semibold text-[var(--bad)] underline underline-offset-2"
+                                className="shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--bad)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
                               >
                                 Retry
                               </button>
@@ -333,7 +337,7 @@ export default function Workspace({
                       <button
                         type="button"
                         onClick={() => onViewSource(source.id)}
-                        className="shrink-0 text-xs font-semibold text-[var(--accent)] underline underline-offset-2"
+                        className="shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                       >
                         View
                       </button>
@@ -342,7 +346,7 @@ export default function Workspace({
                       type="button"
                       onClick={() => onRemoveSource(source.id)}
                       aria-label={`${source.status ? "Cancel" : "Remove"} ${source.name}`}
-                      className="grid size-8 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                      className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--bad-bg)] hover:text-[var(--bad)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
                     >
                       <svg
                         viewBox="0 0 20 20"
@@ -376,7 +380,7 @@ export default function Workspace({
                   type="button"
                   onClick={() => setAddMenuOpen((open) => !open)}
                   disabled={sources.length >= MAX_SOURCES}
-                  className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${SECONDARY_BUTTON_CLASS} min-h-10 px-3`}
                 >
                   + Add source
                 </button>
@@ -386,7 +390,7 @@ export default function Workspace({
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={sources.length >= MAX_SOURCES}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] disabled:opacity-50"
+                      className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
                     >
                       Upload PDFs
                     </button>
@@ -397,7 +401,7 @@ export default function Workspace({
                         setPasteOpen(true);
                       }}
                       disabled={sources.length >= MAX_SOURCES}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] disabled:opacity-50"
+                      className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
                     >
                       Paste text
                     </button>
@@ -413,7 +417,7 @@ export default function Workspace({
                   <input
                     value={sourceName}
                     onChange={(event) => setSourceName(event.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                    className="mt-1.5 min-h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
                   />
                 </label>
                 <label className="mt-3 block text-xs font-semibold text-[var(--muted)]">
@@ -422,14 +426,14 @@ export default function Workspace({
                     value={sourceText}
                     onChange={(event) => setSourceText(event.target.value)}
                     rows={5}
-                    className="mt-1.5 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm leading-6 text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                    className="mt-1.5 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm leading-6 text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
                   />
                 </label>
                 <div className="mt-3 flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setPasteOpen(false)}
-                    className="rounded-lg px-3 py-2 text-sm text-[var(--muted)] hover:bg-[var(--surface-hover)]"
+                    className={`${SECONDARY_BUTTON_CLASS} min-h-10 px-3`}
                   >
                     Cancel
                   </button>
@@ -437,7 +441,7 @@ export default function Workspace({
                     type="button"
                     onClick={addTextSource}
                     disabled={sourceText.trim() === ""}
-                    className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-[var(--on-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`${PRIMARY_BUTTON_CLASS} min-h-10 px-3`}
                   >
                     Add
                   </button>

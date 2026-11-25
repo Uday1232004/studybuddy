@@ -540,7 +540,7 @@ export default function ChatPanel({
   }
 
   return (
-    <section className="mt-10 flex h-[500px] min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+    <section className="flex h-[500px] min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
       <header className="shrink-0 border-b border-[var(--border)] px-5 py-4">
         <h2 className="text-lg font-bold">Chat with your teacher</h2>
       </header>
@@ -673,7 +673,7 @@ export default function ChatPanel({
               type="button"
               onClick={() => void sendMessage(suggestion)}
               disabled={loading}
-              className="shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-50"
             >
               {suggestion}
             </button>
@@ -701,7 +701,7 @@ export default function ChatPanel({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingPdf}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span>{uploadingPdf ? "Reading PDF..." : "Attach PDF"}</span>
               </button>
@@ -731,7 +731,7 @@ export default function ChatPanel({
             </div>
           )}
 
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--bg)] p-3 shadow-sm focus-within:border-[var(--accent)]">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-3 shadow-sm focus-within:border-[var(--accent)]">
             {pdfFileName && (
               <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]">
                 <svg
@@ -869,7 +869,7 @@ export default function ChatPanel({
                     aria-pressed={listening}
                     className={`grid size-9 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-default ${
                       listening
-                        ? "bg-[var(--bad)] text-white"
+                        ? "bg-[var(--bad)] text-[var(--on-accent)]"
                         : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                     }`}
                   >

@@ -108,7 +108,7 @@ function PageThumbnail({
       aria-label={`Open ${pageLabel(source, page)}`}
       className="w-[180px] shrink-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
-      <span className="grid min-h-[220px] w-full place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-neutral-100">
+      <span className="grid min-h-[220px] w-full place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)]">
         <canvas
           ref={canvasRef}
           className={`max-w-full ${loaded ? "block" : "hidden"}`}
@@ -216,7 +216,7 @@ function PageModal({
       role="dialog"
       aria-modal="true"
       aria-label="PDF page preview"
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4"
+      className="fixed inset-0 z-50 overflow-y-auto bg-[var(--text)]/60 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -233,13 +233,13 @@ function PageModal({
             type="button"
             onClick={onClose}
             aria-label="Close page preview"
-            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
             Close
           </button>
         </div>
 
-        <div className="mt-4 max-h-[calc(100dvh-220px)] overflow-auto rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-4 max-h-[calc(100dvh-220px)] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg)]">
           {loadError ? (
             <p role="alert" className="p-6 text-sm text-[var(--bad)]">
               {loadError}
@@ -267,7 +267,7 @@ function PageModal({
               type="button"
               onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
               disabled={currentPage <= 1}
-              className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous page
             </button>
@@ -277,7 +277,7 @@ function PageModal({
                 setCurrentPage((current) => Math.min(pageCount, current + 1))
               }
               disabled={currentPage >= pageCount}
-              className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next page
             </button>
@@ -287,7 +287,7 @@ function PageModal({
               href={`${signedUrl}#page=${currentPage}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-semibold text-[var(--accent)] underline underline-offset-2"
+              className="rounded text-sm font-semibold text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               Open PDF at this page
             </a>

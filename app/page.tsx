@@ -7,7 +7,7 @@ import {
   type ChatRestoreSession,
 } from "./components/ChatPanel";
 import MobileTabs, { type TabName } from "./components/MobileTabs";
-import TopBar from "./components/TopBar";
+import AppNav from "./components/AppNav";
 import Workspace, { type Source } from "./components/Workspace";
 import { readPdfPages } from "../lib/pdf-client";
 import { createClient as createBrowserClient } from "../lib/supabase/client";
@@ -22,6 +22,10 @@ import { markTaskDone } from "../lib/task-done";
 const MAX_FILE_ERROR = "This file is over 50 MB, the current storage limit.";
 const MAX_SOURCES = 20;
 const INDEX_BATCH_PAGES = 10;
+const PRIMARY_ACTION_CLASS =
+  "inline-flex min-h-9 items-center justify-center rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+const SECONDARY_ACTION_CLASS =
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 const DAILY_QUOTA_MESSAGE =
   "The daily Gemini embedding limit is used up. Try again tomorrow, or enable billing for the Gemini key.";
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -1310,7 +1314,7 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)]">
-      <TopBar />
+      <AppNav />
       {(learnBanner || learnError) && (
         <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
@@ -1343,7 +1347,7 @@ export default function Home() {
                         type="button"
                         onClick={() => void handleMarkTask(false)}
                         disabled={taskDoneSaving}
-                        className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                        className={SECONDARY_ACTION_CLASS}
                       >
                         {taskDoneSaving ? "Saving..." : "Undo"}
                       </button>
@@ -1354,7 +1358,7 @@ export default function Home() {
                         type="button"
                         onClick={() => void handleMarkTask(true)}
                         disabled={taskDoneSaving}
-                        className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--on-accent)] disabled:opacity-60"
+                        className={PRIMARY_ACTION_CLASS}
                       >
                         {taskDoneSaving ? "Saving..." : "Mark as done"}
                       </button>
@@ -1362,7 +1366,7 @@ export default function Home() {
                         type="button"
                         onClick={() => void handleTestMe()}
                         disabled={testMeSaving}
-                        className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                        className={SECONDARY_ACTION_CLASS}
                       >
                         {testMeSaving ? "Starting..." : "Test me"}
                       </button>
@@ -1376,7 +1380,7 @@ export default function Home() {
                       {nextTopicUrl ? (
                         <a
                           href={nextTopicUrl}
-                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+                          className={SECONDARY_ACTION_CLASS}
                         >
                           Next topic
                         </a>
@@ -1391,7 +1395,7 @@ export default function Home() {
               )}
               <a
                 href="/planner"
-                className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+                className={`shrink-0 ${SECONDARY_ACTION_CLASS}`}
               >
                 Back to plan
               </a>
@@ -1400,15 +1404,19 @@ export default function Home() {
         </div>
       )}
       <MobileTabs activeTab={activeTab} onSelect={setActiveTab} />
-      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="grid min-h-0 min-w-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)]"
+      >
         <aside
-          className={`${activeTab === "Notes" ? "flex" : "hidden"} min-h-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] lg:flex`}
+          className={`${activeTab === "Notes" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col border-r border-[var(--border)] bg-[var(--bg)] lg:flex`}
         >
           <div className="overflow-y-auto p-5">
             <button
               type="button"
               onClick={handleNewNotes}
-              className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left text-sm font-semibold hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="flex min-h-11 w-full items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left text-sm font-semibold transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               <span>+ New notes</span>
               <span className="grid size-7 place-items-center rounded-lg bg-[var(--surface-hover)]" aria-hidden="true">
@@ -1425,7 +1433,7 @@ export default function Home() {
           </div>
         </aside>
         <section
-          className={`${activeTab === "Workspace" ? "flex" : "hidden"} min-h-0 flex-col overflow-y-auto lg:flex`}
+          className={`${activeTab === "Workspace" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto lg:flex`}
         >
           <Workspace
             restoreSession={restoreSession}
