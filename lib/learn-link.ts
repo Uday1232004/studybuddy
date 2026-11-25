@@ -16,7 +16,7 @@ export function buildLearnUrl(params: {
   pageStart: number | null;
   pageEnd: number | null;
   topic: string | null;
-  taskId: string;
+  taskId: string | null;
 }): string {
   const search = [
     `learn=${encodeURIComponent(params.chatId)}`,
@@ -24,7 +24,7 @@ export function buildLearnUrl(params: {
     `from=${encodeURIComponent(params.pageStart === null ? "" : String(params.pageStart))}`,
     `to=${encodeURIComponent(params.pageEnd === null ? "" : String(params.pageEnd))}`,
     `topic=${encodeURIComponent(params.topic ?? "")}`,
-    `task=${encodeURIComponent(params.taskId)}`,
+    `task=${encodeURIComponent(params.taskId ?? "")}`,
   ];
   return `/?${search.join("&")}`;
 }

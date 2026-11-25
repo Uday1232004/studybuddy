@@ -2148,6 +2148,46 @@ export default function PlannerPage() {
   const groupedTaskDates = [...tasksByDate.keys()].sort((a, b) =>
     a.localeCompare(b)
   );
+  const nextTask =
+    viewPlanId === null && activePlan
+      ? groupedTaskDates
+          .flatMap((date) =>
+            [...(tasksByDate.get(date) ?? [])].sort(
+              (a, b) => a.position - b.position
+            )
+          )
+          .find((task) => {
+            if (task.done || !task.module?.trim()) return false;
+            return Boolean(
+              exams.find((exam) => exam.id === task.exam_id)?.chat_id
+            );
+          }) ?? null
+      : null;
+  const nextTaskExam = nextTask
+    ? exams.find((exam) => exam.id === nextTask.exam_id)
+    : undefined;
+  const nextTaskChatId = nextTaskExam?.chat_id ?? null;
+  const nextTaskModule = nextTask?.module?.trim() ?? "";
+  const nextTaskPages = nextTask ? parseTaskPages(nextTask.pages) : null;
+  const nextTaskAnalysis =
+    nextTask && nextTaskChatId
+      ? analyses.find(
+          (analysis) =>
+            analysis.exam_id === nextTask.exam_id &&
+            analysis.chat_id === nextTaskChatId &&
+            analysis.module_name === nextTaskModule
+        )
+      : undefined;
+  const nextTaskTopic =
+    nextTaskAnalysis?.topics.find((topic) =>
+      nextTaskPages?.pageStart !== null &&
+      nextTaskPages?.pageStart !== undefined &&
+      nextTaskPages.pageEnd !== null &&
+      nextTaskPages.pageEnd !== undefined
+        ? topic.startPage <= nextTaskPages.pageEnd &&
+          topic.endPage >= nextTaskPages.pageStart
+        : false
+    )?.title ?? null;
 
   if (loading) {
     return (
@@ -2695,48 +2735,88 @@ export default function PlannerPage() {
                                       <th className="py-2 pr-3">Pages</th>
                                       <th className="py-2 pr-3">Difficulty</th>
                                       <th className="py-2">Why</th>
+                                      <th className="py-2">Study</th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {analysis.topics.map((topic, topicIndex) => (
-                                      <tr
-                                        key={`${topic.priority}-${topicIndex}`}
-                                        className="border-t border-[var(--border)] align-top"
-                                      >
-                                        <td className="py-2 pr-3">
-                                          {topic.priority}
-                                        </td>
-                                        <td className="py-2 pr-3">
-                                          {topic.title}
-                                        </td>
-                                        <td className="py-2 pr-3">
-                                          {topic.startPage === topic.endPage
-                                            ? `p. ${topic.startPage}`
-                                            : `pp. ${topic.startPage}-${topic.endPage}`}
-                                        </td>
-                                        <td className="py-2 pr-3">
-                                          <select
-                                            aria-label={`Difficulty for ${topic.title}`}
-                                            value={topic.difficulty}
-                                            onChange={(event) =>
-                                              changeAnalysisDifficulty(
-                                                analysis.id,
-                                                topicIndex,
-                                                Number(event.target.value)
-                                              )
-                                            }
-                                            className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
-                                          >
-                                            {[1, 2, 3, 4, 5].map((level) => (
-                                              <option key={level} value={level}>
-                                                {level}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </td>
-                                        <td className="py-2">{topic.reason}</td>
-                                      </tr>
-                                    ))}
+                                    {analysis.topics.map((topic, topicIndex) => {
+                                      const studyChatId =
+                                        analysis.chat_id || exam.chat_id;
+                                      const studyHref =
+                                        studyChatId && analysis.module_name.trim()
+                                          ? buildLearnUrl({
+                                              chatId: studyChatId,
+                                              moduleName: analysis.module_name,
+                                              pageStart: topic.startPage,
+                                              pageEnd: topic.endPage,
+                                              topic: topic.title,
+                                              taskId: null,
+                                            })
+                                          : null;
+                                      return (
+                                        <tr
+                                          key={`${topic.priority}-${topicIndex}`}
+                                          className="border-t border-[var(--border)] align-top"
+                                        >
+                                          <td className="py-2 pr-3">
+                                            {topic.priority}
+                                          </td>
+                                          <td className="py-2 pr-3">
+                                            {studyHref ? (
+                                              <Link
+                                                href={studyHref}
+                                                className="hover:underline"
+                                              >
+                                                {topic.title}
+                                              </Link>
+                                            ) : (
+                                              topic.title
+                                            )}
+                                          </td>
+                                          <td className="py-2 pr-3">
+                                            {topic.startPage === topic.endPage
+                                              ? `p. ${topic.startPage}`
+                                              : `pp. ${topic.startPage}-${topic.endPage}`}
+                                          </td>
+                                          <td className="py-2 pr-3">
+                                            <select
+                                              aria-label={`Difficulty for ${topic.title}`}
+                                              value={topic.difficulty}
+                                              onChange={(event) =>
+                                                changeAnalysisDifficulty(
+                                                  analysis.id,
+                                                  topicIndex,
+                                                  Number(event.target.value)
+                                                )
+                                              }
+                                              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                                            >
+                                              {[1, 2, 3, 4, 5].map((level) => (
+                                                <option key={level} value={level}>
+                                                  {level}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </td>
+                                          <td className="py-2">{topic.reason}</td>
+                                          <td className="py-2">
+                                            {studyHref ? (
+                                              <Link
+                                                href={studyHref}
+                                                aria-label={`Study ${topic.title}`}
+                                                className="inline-flex rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-[var(--on-accent)]"
+                                              >
+                                                Study this
+                                              </Link>
+                                            ) : (
+                                              <span className="text-xs text-[var(--muted)]">
+                                                Link a chat with this PDF to study
+                                              </span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </div>
@@ -2861,6 +2941,28 @@ export default function PlannerPage() {
             </div>
           )}
 
+          {nextTask &&
+            nextTaskChatId &&
+            nextTaskModule &&
+            nextTaskPages && (
+              <Link
+                href={buildLearnUrl({
+                  chatId: nextTaskChatId,
+                  moduleName: nextTaskModule,
+                  pageStart: nextTaskPages.pageStart,
+                  pageEnd: nextTaskPages.pageEnd,
+                  topic: nextTaskTopic,
+                  taskId: String(nextTask.id),
+                })}
+                className="mt-4 inline-flex flex-col rounded-xl bg-[var(--accent)] px-4 py-2 font-semibold text-[var(--on-accent)] hover:bg-[var(--accent-hover)]"
+              >
+                <span>Start next task</span>
+                <span className="text-xs font-normal text-[var(--muted)]">
+                  {nextTask.title} · {formatTaskDate(nextTask.task_date)}
+                </span>
+              </Link>
+            )}
+
           {checklistTasks.length === 0 ? (
             <p className="mt-5 text-sm text-[var(--muted)]">
               {viewPlanId !== null
@@ -2906,8 +3008,19 @@ export default function PlannerPage() {
                               topic.endPage >= taskPages.pageStart
                             : false
                         )?.title ?? null;
+                      const taskLearnUrl =
+                        taskChatId && taskModule
+                          ? buildLearnUrl({
+                              chatId: taskChatId,
+                              moduleName: taskModule,
+                              pageStart: taskPages.pageStart,
+                              pageEnd: taskPages.pageEnd,
+                              topic: taskTopic,
+                              taskId: taskKey,
+                            })
+                          : null;
                       return (
-                        <label
+                        <div
                           key={taskKey}
                           className={`flex items-start gap-3 rounded-xl border border-[var(--border)] p-3 ${
                             task.done ? "text-[var(--muted)]" : ""
@@ -2915,6 +3028,7 @@ export default function PlannerPage() {
                         >
                           <input
                             type="checkbox"
+                            aria-label={`Mark "${task.title}" as done`}
                             checked={task.done}
                             disabled={
                               checklistReadOnly ||
@@ -2932,23 +3046,25 @@ export default function PlannerPage() {
                                 task.done ? "line-through" : ""
                               }`}
                             >
-                              {task.title}
+                              {taskLearnUrl ? (
+                                <Link
+                                  href={taskLearnUrl}
+                                  className="hover:underline"
+                                >
+                                  {task.title}
+                                </Link>
+                              ) : (
+                                task.title
+                              )}
                             </span>
                             <span className="mt-1 flex items-center gap-2 text-xs text-[var(--muted)]">
                               <span>{task.minutes} min</span>
                               <span className="rounded-full bg-[var(--bg)] px-2 py-0.5">
                                 {task.kind}
                               </span>
-                              {taskChatId && taskModule ? (
+                              {taskLearnUrl ? (
                                 <Link
-                                  href={buildLearnUrl({
-                                    chatId: taskChatId,
-                                    moduleName: taskModule,
-                                    pageStart: taskPages.pageStart,
-                                    pageEnd: taskPages.pageEnd,
-                                    topic: taskTopic,
-                                    taskId: taskKey,
-                                  })}
+                                  href={taskLearnUrl}
                                   className="rounded-lg border border-[var(--border)] px-2 py-0.5 text-xs font-medium text-[var(--accent)] hover:bg-[var(--surface-hover)]"
                                 >
                                   {task.done ? "Review" : "Learn"}
@@ -2960,7 +3076,7 @@ export default function PlannerPage() {
                               )}
                             </span>
                           </span>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
