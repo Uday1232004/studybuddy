@@ -16,11 +16,10 @@ import {
   parseLearnParams,
   type LearnParams,
 } from "../lib/learn-link";
+import { MAX_PDF_BYTES, MAX_PDF_PAGES } from "../lib/limits";
 import { markTaskDone } from "../lib/task-done";
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_FILE_ERROR = "This file is over 50 MB, the current storage limit.";
-const MAX_PDF_PAGES = 2000;
 const MAX_SOURCES = 20;
 const INDEX_BATCH_PAGES = 10;
 const DAILY_QUOTA_MESSAGE =
@@ -1127,7 +1126,7 @@ export default function Home() {
       setSourceMessage("You can add up to 20 sources.");
       return;
     }
-    if (file.size > MAX_FILE_BYTES) {
+    if (file.size > MAX_PDF_BYTES) {
       setSourceMessage(MAX_FILE_ERROR);
       return;
     }
@@ -1286,8 +1285,8 @@ export default function Home() {
   }
 
   function addPdfFiles(files: File[]) {
-    const oversized = files.some((file) => file.size > MAX_FILE_BYTES);
-    const queuedFiles = files.filter((file) => file.size <= MAX_FILE_BYTES);
+    const oversized = files.some((file) => file.size > MAX_PDF_BYTES);
+    const queuedFiles = files.filter((file) => file.size <= MAX_PDF_BYTES);
     setSourceMessage(oversized ? MAX_FILE_ERROR : "");
     if (queuedFiles.length === 0) return;
 

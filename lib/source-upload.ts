@@ -2,9 +2,8 @@
 
 import { createClient } from "./supabase/client";
 import { readPdfPages } from "./pdf-client";
+import { MAX_PDF_BYTES, MAX_PDF_PAGES } from "./limits";
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
-const MAX_PDF_PAGES = 2000;
 const INDEX_BATCH_PAGES = 10;
 const DAILY_QUOTA_MESSAGE =
   "The daily Gemini embedding limit is used up. Try again tomorrow, or enable billing for the Gemini key.";
@@ -44,7 +43,7 @@ export async function addPdfSource(
   file: File,
   opts: AddPdfSourceOptions
 ): Promise<UploadedPdfSource> {
-  if (file.size > MAX_FILE_BYTES) {
+  if (file.size > MAX_PDF_BYTES) {
     throw new Error("This file is over 50 MB, the current storage limit.");
   }
   if (opts.signal?.aborted) throw abortError();

@@ -2,13 +2,12 @@
 
 import { getDocumentProxy } from "unpdf";
 import type { PDFDocumentProxy } from "unpdf/pdfjs";
+import { MAX_PDF_BYTES, MAX_PDF_PAGES } from "./limits";
 
-const MAX_FILE_BYTES = 150 * 1024 * 1024;
-const MAX_PAGES = 2000;
 const SELECTABLE_TEXT_ERROR =
   "This PDF has no selectable text (it may be scanned)";
 const PAGE_LIMIT_ERROR = "This PDF has more than 2,000 pages";
-const FILE_LIMIT_ERROR = "This PDF is larger than 150 MB";
+const FILE_LIMIT_ERROR = "This PDF is larger than 50 MB";
 
 function cleanPage(text: string) {
   return text
@@ -27,7 +26,7 @@ export async function readPdfPages(
   onProgress: (done: number, total: number) => void,
   signal?: AbortSignal
 ): Promise<string[]> {
-  if (file.size > MAX_FILE_BYTES) {
+  if (file.size > MAX_PDF_BYTES) {
     throw new Error(FILE_LIMIT_ERROR);
   }
 
@@ -60,7 +59,7 @@ export async function readPdfPages(
 
     pdf = await getDocumentProxy(bytes);
     if (signal?.aborted) throw abortError();
-    if (pdf.numPages > MAX_PAGES) {
+    if (pdf.numPages > MAX_PDF_PAGES) {
       throw new Error(PAGE_LIMIT_ERROR);
     }
 

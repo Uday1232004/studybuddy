@@ -1,10 +1,10 @@
 import { createClient } from "../../../../lib/supabase/server";
 import { embedTexts } from "../../../../lib/embeddings";
 import { consumeUsage, limitMessage } from "../../../../lib/usage-limits";
+import { MAX_PDF_PAGES } from "../../../../lib/limits";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const MAX_BATCH_PAGES = 10;
-const MAX_FILE_PAGES = 2000;
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 150;
 const MIN_BOUNDARY_OFFSET = 650;
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   const startPage = body.startPage as number | null;
   if (
     !name ||
-    (startPage !== null && startPage + body.pages.length - 1 > MAX_FILE_PAGES)
+    (startPage !== null && startPage + body.pages.length - 1 > MAX_PDF_PAGES)
   ) {
     return Response.json({ error: "Please send a valid source." }, { status: 400 });
   }
