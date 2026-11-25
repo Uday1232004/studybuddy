@@ -20,6 +20,7 @@ type RevealStyle = CSSProperties & {
 export default function Reveal({ children, delay = 0 }: Props) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  const revealStyle: RevealStyle = { "--delay": `${delay}ms` };
 
   useEffect(() => {
     const element = elementRef.current;
@@ -56,7 +57,7 @@ export default function Reveal({ children, delay = 0 }: Props) {
     <div
       ref={elementRef}
       className={`reveal${visible ? " reveal-visible" : ""}`}
-      style={{ "--delay": `${delay}ms` } satisfies RevealStyle}
+      style={revealStyle}
     >
       {children}
     </div>

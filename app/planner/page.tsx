@@ -22,6 +22,7 @@ import {
 } from "@/lib/source-upload";
 import { buildLearnUrl } from "@/lib/learn-link";
 import AppNav from "../components/AppNav";
+import TimetableImport from "./components/TimetableImport";
 
 const FIELD_CLASS =
   "min-h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]";
@@ -1367,6 +1368,51 @@ export default function PlannerPage() {
     }
   }
 
+  async function insertExamRecord(input: {
+    subject: string;
+    examDate: string;
+    credits: number;
+    difficulty: number;
+    chatId: string | null;
+  }): Promise<Exam> {
+    const { data, error: insertError } = await createClient()
+      .from("exams")
+      .insert({
+        subject: input.subject,
+        exam_date: input.examDate,
+        credits: input.credits,
+        difficulty: input.difficulty,
+        chat_id: input.chatId,
+      })
+      .select("id, subject, exam_date, credits, difficulty, chat_id")
+      .single();
+    if (insertError) throw new Error(insertError.message);
+
+    const savedExam = parseExam(data as unknown);
+    if (!savedExam) {
+      throw new Error("The subject was saved, but its details could not be read.");
+    }
+    const nextExams = [...examsRef.current, savedExam].sort((a, b) =>
+      a.exam_date.localeCompare(b.exam_date)
+    );
+    examsRef.current = nextExams;
+    setExams(nextExams);
+    setManualModules((current) => ({
+      ...current,
+      [savedExam.id]: [{ name: "", pages: "" }],
+    }));
+    return savedExam;
+  }
+
+  async function addImportedExam(input: {
+    subject: string;
+    examDate: string;
+    credits: number;
+    difficulty: number;
+  }): Promise<Exam> {
+    return insertExamRecord({ ...input, chatId: null });
+  }
+
   async function addExam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -1395,36 +1441,13 @@ export default function PlannerPage() {
 
     setAddingExam(true);
     try {
-      const { data, error: insertError } = await createClient()
-        .from("exams")
-        .insert({
-          subject,
-          exam_date: examForm.examDate,
-          credits,
-          difficulty,
-          chat_id: examForm.chatId || null,
-        })
-        .select("id, subject, exam_date, credits, difficulty, chat_id")
-        .single();
-      if (insertError) {
-        setError(insertError.message);
-        return;
-      }
-
-      const savedExam = parseExam(data as unknown);
-      if (!savedExam) {
-        setError("The subject was saved, but its details could not be read.");
-        return;
-      }
-      const nextExams = [...examsRef.current, savedExam].sort((a, b) =>
-        a.exam_date.localeCompare(b.exam_date)
-      );
-      examsRef.current = nextExams;
-      setExams(nextExams);
-      setManualModules((current) => ({
-        ...current,
-        [savedExam.id]: [{ name: "", pages: "" }],
-      }));
+      await insertExamRecord({
+        subject,
+        examDate: examForm.examDate,
+        credits,
+        difficulty,
+        chatId: examForm.chatId || null,
+      });
       setExamForm({
         subject: "",
         examDate: "",
@@ -2134,6 +2157,33 @@ export default function PlannerPage() {
   const allModulesMissing =
     exams.length > 0 &&
     modulesByExam.every(({ resolution }) => resolution.modules.length === 0);
+
+  function getExamMaterialStatus(
+    examId: string
+  ): "has PDF" | "has modules" | "nothing yet" {
+    const exam = exams.find((item) => item.id === examId);
+    if (!exam) return "nothing yet";
+
+    const linkedChat = chats.find((chat) => chat.id === exam.chat_id);
+    const linkedSources = Array.isArray(linkedChat?.sources)
+      ? linkedChat.sources
+      : [];
+    if (
+      linkedSources.some(
+        (source) => isRecord(source) && source.type === "pdf"
+      )
+    ) {
+      return "has PDF";
+    }
+
+    const moduleEntry = modulesByExam.find(
+      (item) => item.exam.id === examId
+    );
+    return moduleEntry && moduleEntry.resolution.modules.length > 0
+      ? "has modules"
+      : "nothing yet";
+  }
+
   const viewedPlan =
     viewPlanId === null
       ? null
@@ -2299,6 +2349,13 @@ export default function PlannerPage() {
           </button>
         </section>
 
+        <TimetableImport
+          existingExams={exams}
+          onAddExam={addImportedExam}
+          reloadExams={reloadPlannerModuleData}
+          getMaterialStatus={getExamMaterialStatus}
+        />
+
         <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Subjects</h2>
           <form onSubmit={addExam} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2434,7 +2491,10 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section
+          id="modules-for-your-plan"
+          className="motion-card min-w-0 scroll-mt-24 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5"
+        >
           <h2 className="text-lg font-bold">Modules for your plan</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
             Linked chats provide one module per PDF when each page count is saved. Otherwise, add the modules by hand.

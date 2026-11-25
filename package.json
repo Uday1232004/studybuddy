@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node_modules/.bin/jiti scripts/usage-limits.test.mjs && node_modules/.bin/jiti scripts/planner.test.mjs && node_modules/.bin/jiti scripts/analysis.test.mjs && node_modules/.bin/jiti scripts/learn-link.test.mjs"
+    "test": "node_modules/.bin/jiti scripts/usage-limits.test.mjs && node_modules/.bin/jiti scripts/planner.test.mjs && node_modules/.bin/jiti scripts/analysis.test.mjs && node_modules/.bin/jiti scripts/learn-link.test.mjs && node_modules/.bin/jiti scripts/timetable.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
