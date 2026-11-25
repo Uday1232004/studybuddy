@@ -11,7 +11,12 @@ import TopBar from "./components/TopBar";
 import Workspace, { type Source } from "./components/Workspace";
 import { readPdfPages } from "../lib/pdf-client";
 import { createClient as createBrowserClient } from "../lib/supabase/client";
-import { parseLearnParams } from "../lib/learn-link";
+import {
+  buildLearnUrl,
+  parseLearnParams,
+  type LearnParams,
+} from "../lib/learn-link";
+import { markTaskDone } from "../lib/task-done";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_FILE_ERROR = "This file is over 50 MB, the current storage limit.";
@@ -32,6 +37,134 @@ type SourceIndexWork = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+type StudyTaskRow = {
+  id: string | number;
+  plan_id: string | null;
+  exam_id: string;
+  module: string | null;
+  pages: string | null;
+  task_date: string;
+  position: number;
+  done: boolean;
+};
+
+function parseStudyTask(value: unknown): StudyTaskRow | null {
+  if (
+    !isRecord(value) ||
+    !(typeof value.id === "string" || typeof value.id === "number") ||
+    !(typeof value.plan_id === "string" || value.plan_id === null) ||
+    typeof value.exam_id !== "string" ||
+    !(typeof value.module === "string" || value.module === null) ||
+    !(typeof value.pages === "string" || value.pages === null) ||
+    typeof value.task_date !== "string" ||
+    typeof value.position !== "number" ||
+    typeof value.done !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    plan_id: value.plan_id,
+    exam_id: value.exam_id,
+    module: value.module,
+    pages: value.pages,
+    task_date: value.task_date.slice(0, 10),
+    position: value.position,
+    done: value.done,
+  };
+}
+
+function parseTaskPageRange(pages: string | null): {
+  pageStart: number | null;
+  pageEnd: number | null;
+} {
+  if (!pages) return { pageStart: null, pageEnd: null };
+  const numbers = Array.from(pages.matchAll(/\d+/g), (match) =>
+    Number(match[0])
+  ).filter((number) => Number.isInteger(number) && number > 0);
+  if (numbers.length === 0) return { pageStart: null, pageEnd: null };
+  return {
+    pageStart: numbers[0],
+    pageEnd: numbers.length > 1 ? numbers[numbers.length - 1] : numbers[0],
+  };
+}
+
+async function findNextTopicUrl(
+  params: LearnParams
+): Promise<{ url: string | null; status: string; error: string | null }> {
+  if (!params.taskId) {
+    return { url: null, status: "", error: null };
+  }
+  try {
+    const supabase = createBrowserClient();
+    const { data: currentData, error: currentError } = await supabase
+      .from("plan_tasks")
+      .select("id, plan_id, exam_id, module, pages, task_date, position, done")
+      .eq("id", params.taskId)
+      .maybeSingle();
+    if (currentError) {
+      return { url: null, status: "", error: currentError.message };
+    }
+    const current = parseStudyTask(currentData);
+    if (!current || current.plan_id === null) {
+      return { url: null, status: "", error: null };
+    }
+
+    const { data, error } = await supabase
+      .from("plan_tasks")
+      .select("id, plan_id, exam_id, module, pages, task_date, position, done")
+      .eq("plan_id", current.plan_id)
+      .eq("exam_id", current.exam_id)
+      .order("task_date", { ascending: true })
+      .order("position", { ascending: true });
+    if (error) return { url: null, status: "", error: error.message };
+
+    const rows: StudyTaskRow[] = [];
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        const row = parseStudyTask(item);
+        if (row) rows.push(row);
+      }
+    }
+    const currentIndex = rows.findIndex(
+      (row) => String(row.id) === String(params.taskId)
+    );
+    const following = rows
+      .slice(currentIndex >= 0 ? currentIndex + 1 : 0)
+      .find((row) => !row.done);
+    if (!following || !following.module?.trim()) {
+      return {
+        url: null,
+        status: "All topics in this plan are done.",
+        error: null,
+      };
+    }
+
+    const pageRange = parseTaskPageRange(following.pages);
+    return {
+      url: buildLearnUrl({
+        chatId: params.chatId,
+        moduleName: following.module.trim(),
+        pageStart: pageRange.pageStart,
+        pageEnd: pageRange.pageEnd,
+        topic: null,
+        taskId: String(following.id),
+      }),
+      status: "",
+      error: null,
+    };
+  } catch (error) {
+    return {
+      url: null,
+      status: "",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not find the next topic.",
+    };
+  }
 }
 
 export default function Home() {
@@ -62,6 +195,14 @@ export default function Home() {
   const [learnBanner, setLearnBanner] = useState("");
   const [learnError, setLearnError] = useState("");
   const learnStartedRef = useRef(false);
+  const testMeStartedRef = useRef(false);
+  const [learnParams, setLearnParams] = useState<LearnParams | null>(null);
+  const [taskDone, setTaskDone] = useState(false);
+  const [taskDoneSaving, setTaskDoneSaving] = useState(false);
+  const [taskDoneError, setTaskDoneError] = useState("");
+  const [nextTopicUrl, setNextTopicUrl] = useState<string | null>(null);
+  const [nextTopicStatus, setNextTopicStatus] = useState("");
+  const [testMeSaving, setTestMeSaving] = useState(false);
 
   function replaceSources(nextSources: Source[]) {
     sourcesRef.current = nextSources;
@@ -296,6 +437,28 @@ export default function Home() {
     void (async () => {
       setLearnError("");
       setLearnBanner("");
+      setLearnParams(params);
+      setTaskDone(false);
+      setTaskDoneSaving(false);
+      setTaskDoneError("");
+      setNextTopicUrl(null);
+      setNextTopicStatus("");
+      testMeStartedRef.current = false;
+
+      if (params.taskId) {
+        const supabase = createBrowserClient();
+        const { data, error } = await supabase
+          .from("plan_tasks")
+          .select("id, plan_id, exam_id, module, pages, task_date, position, done")
+          .eq("id", params.taskId)
+          .maybeSingle();
+        if (error) {
+          setTaskDoneError(error.message);
+        } else {
+          const task = parseStudyTask(data);
+          setTaskDone(task?.done ?? false);
+        }
+      }
 
       const response = await fetch(
         `/api/history/${encodeURIComponent(params.chatId)}`
@@ -483,6 +646,120 @@ export default function Home() {
       }
     })();
   }, [handleAssistantReply]);
+
+  async function handleMarkTask(done: boolean) {
+    if (!learnParams?.taskId || taskDoneSaving) return;
+    setTaskDoneSaving(true);
+    setTaskDoneError("");
+    const result = await markTaskDone(learnParams.taskId, done);
+    if (!result.ok) {
+      setTaskDoneError(result.error ?? "Could not update this task.");
+      setTaskDoneSaving(false);
+      return;
+    }
+
+    setTaskDone(done);
+    setTaskDoneSaving(false);
+    if (done) {
+      const next = await findNextTopicUrl(learnParams);
+      setNextTopicUrl(next.url);
+      setNextTopicStatus(next.status);
+      if (next.error) setTaskDoneError(next.error);
+    } else {
+      setNextTopicUrl(null);
+      setNextTopicStatus("");
+    }
+  }
+
+  async function handleTestMe() {
+    if (
+      testMeStartedRef.current ||
+      testMeSaving ||
+      !learnParams
+    ) {
+      return;
+    }
+    testMeStartedRef.current = true;
+    setTestMeSaving(true);
+    setLearnError("");
+
+    const range =
+      learnParams.pageStart !== null && learnParams.pageEnd !== null
+        ? learnParams.pageStart === learnParams.pageEnd
+          ? `page ${learnParams.pageStart}`
+          : `pages ${learnParams.pageStart}-${learnParams.pageEnd}`
+        : "the assigned pages";
+    const topic = learnParams.topic ?? "this topic";
+    const quizMessage: ChatMessage = {
+      role: "user",
+      content: `Ask me 3 short exam-style questions on ${topic} (${range}), one at a time. After my third answer, tell me my score out of 3 and which part to revise.`,
+    };
+    const updatedMessages = [...chatMessagesRef.current, quizMessage];
+    chatMessagesRef.current = updatedMessages;
+    setRestoreSession((current) => ({
+      key: current.key + 1,
+      messages: updatedMessages,
+    }));
+
+    try {
+      const matchingSource = sourcesRef.current.find(
+        (source) =>
+          source.enabled &&
+          source.type === "pdf" &&
+          !source.status &&
+          !source.error
+      );
+      if (!matchingSource) {
+        setLearnError("No PDF source is available to test this topic.");
+        testMeStartedRef.current = false;
+        return;
+      }
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceIds: [matchingSource.id],
+          messages: updatedMessages.map(({ role, content }) => ({
+            role,
+            content,
+          })),
+        }),
+      });
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      if (!response.ok) {
+        setLearnError(
+          isRecord(payload) && typeof payload.error === "string"
+            ? payload.error
+            : "The teacher could not start the quiz. Try again."
+        );
+        return;
+      }
+      if (!isRecord(payload) || typeof payload.reply !== "string") {
+        setLearnError("The teacher could not start the quiz. Try again.");
+        return;
+      }
+      const completedMessages: ChatMessage[] = [
+        ...updatedMessages,
+        { role: "assistant", content: payload.reply },
+      ];
+      chatMessagesRef.current = completedMessages;
+      setRestoreSession((current) => ({
+        key: current.key + 1,
+        messages: completedMessages,
+      }));
+      handleAssistantReply(completedMessages);
+    } catch {
+      setLearnError("The teacher could not start the quiz. Try again.");
+    } finally {
+      setTestMeSaving(false);
+    }
+  }
 
   function handleNewNotes() {
     chatSessionGenerationRef.current += 1;
@@ -1032,22 +1309,89 @@ export default function Home() {
       <TopBar />
       {(learnBanner || learnError) && (
         <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-            {learnBanner ? (
-              <p className="min-w-0 truncate text-sm font-medium">
-                {learnBanner}
-              </p>
-            ) : (
-              <p role="alert" className="min-w-0 text-sm text-[var(--bad)]">
-                {learnError}
-              </p>
-            )}
-            <a
-              href="/planner"
-              className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
-            >
-              Back to plan
-            </a>
+          <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              {learnBanner && (
+                <p className="truncate text-sm font-medium">
+                  {learnBanner}
+                </p>
+              )}
+              {learnError && (
+                <p role="alert" className="mt-1 text-sm text-[var(--bad)]">
+                  {learnError}
+                </p>
+              )}
+              {taskDoneError && (
+                <p role="alert" className="mt-1 text-sm text-[var(--bad)]">
+                  {taskDoneError}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {learnParams?.taskId && (
+                <>
+                  {taskDone ? (
+                    <>
+                      <span className="text-xs font-medium text-[var(--accent)]">
+                        Done
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleMarkTask(false)}
+                        disabled={taskDoneSaving}
+                        className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                      >
+                        {taskDoneSaving ? "Saving..." : "Undo"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleMarkTask(true)}
+                        disabled={taskDoneSaving}
+                        className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--on-accent)] disabled:opacity-60"
+                      >
+                        {taskDoneSaving ? "Saving..." : "Mark as done"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleTestMe()}
+                        disabled={testMeSaving}
+                        className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)] disabled:opacity-60"
+                      >
+                        {testMeSaving ? "Starting..." : "Test me"}
+                      </button>
+                    </>
+                  )}
+                  {taskDone && (
+                    <>
+                      <span className="text-xs font-medium">
+                        Done. Nice work.
+                      </span>
+                      {nextTopicUrl ? (
+                        <a
+                          href={nextTopicUrl}
+                          className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+                        >
+                          Next topic
+                        </a>
+                      ) : nextTopicStatus ? (
+                        <span className="text-xs text-[var(--muted)]">
+                          {nextTopicStatus}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </>
+              )}
+              <a
+                href="/planner"
+                className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--surface-hover)]"
+              >
+                Back to plan
+              </a>
+            </div>
           </div>
         </div>
       )}
