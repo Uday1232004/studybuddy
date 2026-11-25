@@ -55,9 +55,9 @@ type Props = {
 const MAX_SOURCES = 20;
 const MOBILE_QUERY = "(max-width: 1023px)";
 const PRIMARY_BUTTON_CLASS =
-  "inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "motion-button inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 const SECONDARY_BUTTON_CLASS =
-  "inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "motion-button inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 
 function subscribeToMobileChanges(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -183,7 +183,7 @@ export default function Workspace({
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        className={`relative rounded-2xl border bg-[var(--surface)] p-4 shadow-sm transition-colors sm:p-5 ${
+        className={`motion-card relative rounded-2xl border bg-[var(--surface)] p-4 shadow-sm transition-colors sm:p-5 ${
           isDraggingPdf
             ? "border-dashed border-[var(--accent)] bg-[var(--accent)]/5 ring-2 ring-[var(--accent)]"
             : "border-[var(--border)]"
@@ -202,7 +202,7 @@ export default function Workspace({
           type="button"
           onClick={() => setExpandedOverride(!sourcesExpanded)}
           aria-expanded={sourcesExpanded}
-          className="flex min-h-11 w-full items-center justify-between gap-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="motion-button flex min-h-11 w-full items-center justify-between gap-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           <span className="text-lg font-bold">Sources</span>
           <span className="flex items-center gap-2 text-sm text-[var(--muted)]">
@@ -234,7 +234,7 @@ export default function Workspace({
                 {sources.map((source) => (
                   <li
                     key={source.id}
-                    className="flex min-w-0 items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5"
+                    className="list-row-enter flex min-w-0 items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5"
                   >
                     <input
                       type="checkbox"
@@ -243,7 +243,7 @@ export default function Workspace({
                         onToggleSource(source.id, event.target.checked)
                       }
                       aria-label={`Use ${source.name}`}
-                      className="size-4 shrink-0 accent-[var(--accent)]"
+                      className="checkbox-pop size-4 shrink-0 accent-[var(--accent)]"
                     />
                     {source.type === "pdf" ? (
                       <svg
@@ -274,13 +274,13 @@ export default function Workspace({
                         {source.name}
                       </p>
                       {source.status === "reading" ? (
-                        <p className="truncate text-xs text-[var(--muted)]">
+                        <p className="loading-pulse truncate text-xs text-[var(--muted)]">
                           {source.progress?.total
                             ? `Reading page ${Math.max(source.progress.start, 1)} of ${source.progress.total}`
                             : `Reading ${source.name}...`}
                         </p>
                       ) : source.status === "indexing" ? (
-                        <p className="text-xs text-[var(--muted)]">
+                        <p className="loading-pulse text-xs text-[var(--muted)]">
                           Indexing pages {source.progress?.start ?? 1}-
                           {source.progress?.end ?? 1} of{" "}
                           {source.progress?.total ?? 0} (waiting for the
@@ -296,7 +296,7 @@ export default function Workspace({
                               <button
                                 type="button"
                                 onClick={() => onRetrySource(source.id)}
-                                className="shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--bad)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
+                                className="motion-button shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--bad)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
                               >
                                 Retry
                               </button>
@@ -337,7 +337,7 @@ export default function Workspace({
                       <button
                         type="button"
                         onClick={() => onViewSource(source.id)}
-                        className="shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                        className="motion-button shrink-0 rounded px-1 py-1 text-xs font-semibold text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                       >
                         View
                       </button>
@@ -346,7 +346,7 @@ export default function Workspace({
                       type="button"
                       onClick={() => onRemoveSource(source.id)}
                       aria-label={`${source.status ? "Cancel" : "Remove"} ${source.name}`}
-                      className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--bad-bg)] hover:text-[var(--bad)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
+                      className="motion-button grid size-9 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--bad-bg)] hover:text-[var(--bad)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)]"
                     >
                       <svg
                         viewBox="0 0 20 20"
@@ -390,7 +390,7 @@ export default function Workspace({
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={sources.length >= MAX_SOURCES}
-                      className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
+                      className="motion-button min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
                     >
                       Upload PDFs
                     </button>
@@ -401,7 +401,7 @@ export default function Workspace({
                         setPasteOpen(true);
                       }}
                       disabled={sources.length >= MAX_SOURCES}
-                      className="min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
+                      className="motion-button min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-50"
                     >
                       Paste text
                     </button>

@@ -26,11 +26,11 @@ import AppNav from "../components/AppNav";
 const FIELD_CLASS =
   "min-h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]";
 const PRIMARY_BUTTON_CLASS =
-  "inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "motion-button inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 const SECONDARY_BUTTON_CLASS =
-  "inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "motion-button inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 const DESTRUCTIVE_BUTTON_CLASS =
-  "inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--bad)] bg-[var(--bad-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--bad)] transition-colors hover:bg-[var(--bad)] hover:text-[var(--on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:cursor-not-allowed disabled:opacity-60";
+  "motion-button inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--bad)] bg-[var(--bad-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--bad)] transition-colors hover:bg-[var(--bad)] hover:text-[var(--on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:cursor-not-allowed disabled:opacity-60";
 
 type Exam = {
   id: string;
@@ -2208,7 +2208,7 @@ export default function PlannerPage() {
           tabIndex={-1}
           className="grid min-h-[calc(100dvh-3.5rem)] place-items-center"
         >
-          <p className="text-sm text-[var(--muted)]">Loading...</p>
+          <p className="loading-pulse text-sm text-[var(--muted)]">Loading...</p>
         </main>
       </div>
     );
@@ -2249,7 +2249,7 @@ export default function PlannerPage() {
           </p>
         )}
 
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Settings</h2>
           <div className="mt-4 grid gap-5 md:grid-cols-[220px_1fr]">
             <label className="block text-sm font-medium">
@@ -2281,7 +2281,7 @@ export default function PlannerPage() {
                       type="checkbox"
                       checked={settings.daysOff.includes(day.value)}
                       onChange={() => toggleDayOff(day.value)}
-                      className="accent-[var(--accent)]"
+                      className="checkbox-pop accent-[var(--accent)]"
                     />
                     {day.label}
                   </label>
@@ -2299,7 +2299,7 @@ export default function PlannerPage() {
           </button>
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Subjects</h2>
           <form onSubmit={addExam} className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium sm:col-span-2">
@@ -2405,7 +2405,7 @@ export default function PlannerPage() {
               exams.map((exam) => (
                 <div
                   key={exam.id}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  className="list-row-enter flex flex-wrap items-center justify-between gap-3 py-3"
                 >
                   <div>
                     <p className="font-semibold">{exam.subject}</p>
@@ -2434,7 +2434,7 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Modules for your plan</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
             Linked chats provide one module per PDF when each page count is saved. Otherwise, add the modules by hand.
@@ -2476,7 +2476,7 @@ export default function PlannerPage() {
               return (
                 <div
                   key={exam.id}
-                  className="rounded-xl border border-[var(--border)] p-4"
+                  className="motion-card list-row-enter rounded-xl border border-[var(--border)] p-4"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="font-semibold">{exam.subject}</h3>
@@ -2817,7 +2817,7 @@ export default function PlannerPage() {
                                               <Link
                                                 href={studyHref}
                                                 aria-label={`Study ${topic.title}`}
-                                                className="inline-flex min-h-8 items-center rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                                                className="motion-button inline-flex min-h-8 items-center rounded-lg bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                                               >
                                                 Study this
                                               </Link>
@@ -2864,7 +2864,7 @@ export default function PlannerPage() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold">
@@ -3035,7 +3035,7 @@ export default function PlannerPage() {
                       return (
                         <div
                           key={taskKey}
-                          className={`flex min-h-11 items-center gap-3 rounded-xl border border-[var(--border)] p-3 transition-colors hover:bg-[var(--surface-hover)] ${
+                          className={`list-row-enter flex min-h-11 items-center gap-3 rounded-xl border border-[var(--border)] p-3 transition-colors hover:bg-[var(--surface-hover)] ${
                             task.done ? "text-[var(--muted)]" : ""
                           }`}
                         >
@@ -3051,7 +3051,7 @@ export default function PlannerPage() {
                             onChange={(event) =>
                               void toggleTask(task, event.target.checked)
                             }
-                            className="size-5 shrink-0 accent-[var(--accent)]"
+                            className="checkbox-pop size-5 shrink-0 accent-[var(--accent)]"
                           />
                           <span className="min-w-0 flex-1">
                             <span
@@ -3078,7 +3078,7 @@ export default function PlannerPage() {
                               {taskLearnUrl ? (
                                 <Link
                                   href={taskLearnUrl}
-                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                                  className="motion-button rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                                 >
                                   {task.done ? "Review" : "Learn"}
                                 </Link>
@@ -3099,7 +3099,7 @@ export default function PlannerPage() {
           )}
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
+        <section className="motion-card min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
           <h2 className="text-lg font-bold">Plan history</h2>
           {plans.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--muted)]">
@@ -3115,7 +3115,7 @@ export default function PlannerPage() {
                 const isRenaming = renamingPlanId === plan.id;
                 const isConfirmingDelete = deleteConfirmPlanId === plan.id;
                 return (
-                  <div key={plan.id} className="py-4">
+                  <div key={plan.id} className="list-row-enter py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         {isRenaming ? (

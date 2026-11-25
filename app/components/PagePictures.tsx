@@ -106,7 +106,7 @@ function PageThumbnail({
       type="button"
       onClick={onOpen}
       aria-label={`Open ${pageLabel(source, page)}`}
-      className="w-[180px] shrink-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="motion-button list-row-enter w-[180px] shrink-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
       <span className="grid min-h-[220px] w-full place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)]">
         <canvas
@@ -221,7 +221,7 @@ function PageModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="mx-auto my-4 w-full max-w-[950px] rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl sm:p-6">
+      <div className="motion-card mx-auto my-4 w-full max-w-[950px] rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-[var(--text)]">
@@ -233,7 +233,7 @@ function PageModal({
             type="button"
             onClick={onClose}
             aria-label="Close page preview"
-            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="motion-button shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
             Close
           </button>
@@ -267,7 +267,7 @@ function PageModal({
               type="button"
               onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
               disabled={currentPage <= 1}
-              className="min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="motion-button min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous page
             </button>
@@ -277,7 +277,7 @@ function PageModal({
                 setCurrentPage((current) => Math.min(pageCount, current + 1))
               }
               disabled={currentPage >= pageCount}
-              className="min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="motion-button min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next page
             </button>
@@ -328,7 +328,7 @@ export default function PagePictures({ text, sources }: Props) {
     <>
       <section
         aria-label="Pages cited from your PDFs"
-        className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3"
+        className="motion-card mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3"
       >
         <h3 className="mb-2 text-xs font-semibold text-[var(--muted)]">
           Pages from your PDFs
@@ -353,7 +353,7 @@ export default function PagePictures({ text, sources }: Props) {
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="mt-3 text-xs font-semibold text-[var(--accent)] underline underline-offset-2"
+            className="motion-button mt-3 rounded text-xs font-semibold text-[var(--accent)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
             Show {remainingCount} more
           </button>

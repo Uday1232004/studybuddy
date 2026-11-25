@@ -38,7 +38,7 @@ export default function AppNav() {
             <Link
               href="/"
               aria-current={workspaceActive ? "page" : undefined}
-              className={`rounded-lg px-2.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-3 sm:text-sm ${
+              className={`nav-link motion-button rounded-lg px-2.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-3 sm:text-sm ${
                 workspaceActive
                   ? "bg-[var(--accent)] text-[var(--on-accent)]"
                   : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
@@ -49,7 +49,7 @@ export default function AppNav() {
             <Link
               href="/planner"
               aria-current={plannerActive ? "page" : undefined}
-              className={`rounded-lg px-2.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-3 sm:text-sm ${
+              className={`nav-link motion-button rounded-lg px-2.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-3 sm:text-sm ${
                 plannerActive
                   ? "bg-[var(--accent)] text-[var(--on-accent)]"
                   : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"

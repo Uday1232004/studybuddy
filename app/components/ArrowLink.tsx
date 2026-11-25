@@ -28,7 +28,7 @@ export default function ArrowLink({
   return (
     <Link
       href={href}
-      className={`inline-flex items-center justify-between gap-5 rounded-xl px-5 py-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${variants[variant]}`}
+      className={`motion-button inline-flex items-center justify-between gap-5 rounded-xl px-5 py-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${variants[variant]}`}
     >
       {children}
       <span className={`grid size-7 place-items-center rounded-lg ${arrowTiles[variant]}`} aria-hidden="true">

@@ -540,7 +540,7 @@ export default function ChatPanel({
   }
 
   return (
-    <section className="flex h-[500px] min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+    <section className="motion-card flex h-[500px] min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
       <header className="shrink-0 border-b border-[var(--border)] px-5 py-4">
         <h2 className="text-lg font-bold">Chat with your teacher</h2>
       </header>
@@ -550,7 +550,11 @@ export default function ChatPanel({
       >
         {visibleMessages.length === 0 ? (
           <div className="flex min-h-full items-center justify-center py-6 text-center">
-            <p className="max-w-md text-base leading-7 text-[var(--muted)]">
+            <p
+              className={`max-w-md text-base leading-7 text-[var(--muted)] ${
+                sourceIds.length > 0 ? "loading-pulse" : ""
+              }`}
+            >
               {sourceIds.length === 0
                 ? "Tick at least one source to start."
                 : readingMaterial
@@ -643,7 +647,7 @@ export default function ChatPanel({
               </div>
             ))}
             {loading && (
-              <p className="text-sm text-[var(--muted)]">
+              <p className="loading-pulse text-sm text-[var(--muted)]">
                 {readingMaterial
                   ? "Teacher is reading your material..."
                   : "Teacher is thinking..."}
@@ -673,7 +677,7 @@ export default function ChatPanel({
               type="button"
               onClick={() => void sendMessage(suggestion)}
               disabled={loading}
-              className="shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-50"
+              className="motion-button shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-50"
             >
               {suggestion}
             </button>
@@ -701,7 +705,7 @@ export default function ChatPanel({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingPdf}
-                className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="motion-button flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span>{uploadingPdf ? "Reading PDF..." : "Attach PDF"}</span>
               </button>
@@ -750,7 +754,7 @@ export default function ChatPanel({
                   type="button"
                   onClick={onDismissPdf}
                   aria-label="Remove attached PDF"
-                  className="grid size-5 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                  className="motion-button grid size-5 shrink-0 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                 >
                   <svg
                     viewBox="0 0 20 20"
@@ -790,7 +794,7 @@ export default function ChatPanel({
                   type="button"
                   onClick={acceptSpeech}
                   aria-label="Accept dictated text"
-                  className="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  className="motion-button grid size-9 shrink-0 place-items-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                 >
                   <svg
                     viewBox="0 0 20 20"
@@ -807,7 +811,7 @@ export default function ChatPanel({
                   type="button"
                   onClick={cancelSpeech}
                   aria-label="Cancel dictation"
-                  className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  className="motion-button grid size-9 shrink-0 place-items-center rounded-full border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                 >
                   <svg
                     viewBox="0 0 20 20"
@@ -845,7 +849,7 @@ export default function ChatPanel({
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-label="Open attachment and voice options"
                 aria-expanded={menuOpen}
-                className="grid size-9 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                className="motion-button grid size-9 place-items-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
               >
                 <svg
                   viewBox="0 0 20 20"
@@ -867,7 +871,7 @@ export default function ChatPanel({
                     disabled={listening}
                     aria-label="Start voice input"
                     aria-pressed={listening}
-                    className={`grid size-9 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-default ${
+                    className={`motion-button grid size-9 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-default ${
                       listening
                         ? "bg-[var(--bad)] text-[var(--on-accent)]"
                         : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
@@ -895,7 +899,7 @@ export default function ChatPanel({
                     sourceIds.length === 0
                   }
                   aria-label="Send message"
-                  className="grid size-10 place-items-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="motion-button grid size-10 place-items-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <svg
                     viewBox="0 0 20 20"

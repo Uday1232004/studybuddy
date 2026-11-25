@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 
 const SECONDARY_BUTTON_CLASS =
-  "inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50";
+  "motion-button inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50";
 const DESTRUCTIVE_BUTTON_CLASS =
-  "inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--bad)] bg-[var(--bad-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--bad)] transition-colors hover:bg-[var(--bad)] hover:text-[var(--on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:cursor-not-allowed disabled:opacity-50";
+  "motion-button inline-flex min-h-9 items-center justify-center rounded-lg border border-[var(--bad)] bg-[var(--bad-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--bad)] transition-colors hover:bg-[var(--bad)] hover:text-[var(--on-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:cursor-not-allowed disabled:opacity-50";
 
 export type SavedKit = {
   id: string;
@@ -207,13 +207,13 @@ export default function History({
   }
 
   return (
-    <section className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+    <section className="motion-card mt-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <h2 className="text-xs font-semibold tracking-wide text-[var(--muted)] uppercase">
         My history
       </h2>
 
       {loading && (
-        <p className="mt-3 text-sm text-[var(--muted)]" aria-live="polite">
+        <p className="loading-pulse mt-3 text-sm text-[var(--muted)]" aria-live="polite">
           Loading...
         </p>
       )}
@@ -228,9 +228,7 @@ export default function History({
         </div>
       )}
       {!loading && !error && kits.length === 0 && (
-        <p className="mt-3 text-sm text-[var(--muted)]">
-          No history yet. Create a study kit in the workspace to see it here.
-        </p>
+        <p className="mt-3 text-sm text-[var(--muted)]">No history yet.</p>
       )}
 
       <ul className="mt-3 space-y-2">
@@ -238,13 +236,13 @@ export default function History({
           const isConfirming = confirmation?.id === kit.id;
 
           return (
-            <li key={kit.id}>
+            <li key={kit.id} className="list-row-enter">
               <div className="group flex items-stretch gap-1">
                 <button
                   type="button"
                   onClick={() => void openItem(kit)}
                   disabled={openingId === kit.id}
-                  className={`min-w-0 flex-1 rounded-r-xl border-y border-r px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                  className={`motion-button min-w-0 flex-1 rounded-r-xl border-y border-r px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
                     selectedId === kit.id
                       ? "border-l-2 border-l-[var(--accent)] bg-[var(--surface)]"
                       : "border-l-2 border-l-transparent hover:bg-[var(--surface)]"
@@ -269,7 +267,7 @@ export default function History({
                     disabled={busyAction === `delete:${kit.id}`}
                     aria-label={`Delete ${getTitle(kit)}`}
                     title="Delete chat"
-                    className="grid size-9 place-items-center rounded-lg text-[var(--muted)] opacity-100 transition-colors hover:bg-[var(--bad-bg)] hover:text-[var(--bad)] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                    className="motion-button grid size-9 place-items-center rounded-lg text-[var(--muted)] opacity-100 transition-colors hover:bg-[var(--bad-bg)] hover:text-[var(--bad)] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bad)] disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                   >
                     <svg
                       viewBox="0 0 20 20"
